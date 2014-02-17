@@ -1887,9 +1887,9 @@ void *index_file(void *arg)
 		fprintf(stdout, "finished %s for %d keys\n", args->ctx_string, line);
 
 		// Spit out first chunk of memory in buffer
-		for (len = 0; len < 50; len++) {
-			fputc(buffer + len, stdout);
-		}
+		//memcpy(key, bt->mgr->buffer + 1000000000, 150);
+		//key[150] = '\0';
+		//fprintf(stdout, "Buffer: %s\n", key);
 
 		/*if (rowid = bt_findkey(bt, "police", 6)) {
 			fprintf(stdout, "Found the key in row: %d\n", rowid);
