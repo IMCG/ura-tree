@@ -44,6 +44,7 @@ REDISTRIBUTION OF THIS SOFTWARE.
 
 #include <memory.h>
 #include <string.h>
+#include "utils.h"
 
 typedef unsigned long long	uid;
 
@@ -179,6 +180,7 @@ typedef struct {
 	ushort *hash;				// hash table of pool entries
 	BtPool *pool;				// memory pool page segments
 	BtSpinLatch *latch;			// latches for pool hash slots
+	unsigned long long lockwait;
 } BtMgr;
 
 typedef struct {
@@ -490,6 +492,8 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize, uint
 
 	mgr->poolmax = poolmax;
 	mgr->mode = mode;
+
+	mgr->lockwait = 0;
 
 	if (cacheblk < mgr->page_size)
 		cacheblk = mgr->page_size;
@@ -845,14 +849,20 @@ BTERR bt_lockpage(BtDb *bt, uid page_no, BtLock mode, BtPage *pageptr)
 	BtPool *pool;
 	uint subpage;
 	BtPage page;
+	unsigned long long startTime, endTime;
+	
+	startTime = preciseTime();
 
 	//	find/create maping in pool table
 	//	  and pin our pool slot
 
 	if (pool = bt_pinpage(bt, page_no))
 		subpage = (uint)(page_no & bt->mgr->poolmask); // page within mapping
-	else
+	else {
+		endTime = preciseTime();
+		bt->mgr->lockwait += (endTime - startTime);
 		return bt->err;
+	}
 
 	page = (BtPage)(pool->map + (subpage << bt->mgr->page_bits));
 	/*
@@ -884,12 +894,16 @@ BTERR bt_lockpage(BtDb *bt, uid page_no, BtLock mode, BtPage *pageptr)
 		bt_spinwritelock(page->parent);
 		break;
 	default:
+		endTime = preciseTime();
+		bt->mgr->lockwait += (endTime - startTime);
 		return bt->err = BTERR_lock;
 	}
 
 	if (pageptr)
 		*pageptr = page;
 
+	endTime = preciseTime();
+	bt->mgr->lockwait += (endTime - startTime);
 	return bt->err = 0;
 }
 
@@ -2019,6 +2033,7 @@ int main(int argc, char **argv)
 	}
 
 	//	fire off threads
+	calibratePreciseTime();
 
 	for (idx = 0; idx < cnt; idx++) {
 		args[idx].ctx_string = argv[idx + 4];
@@ -2039,6 +2054,7 @@ int main(int argc, char **argv)
 	gettimeofday(&stop, NULL);
 	real_time = 1000.0 * (stop.tv_sec - start.tv_sec) + 0.001 * (stop.tv_usec - start.tv_usec);
 	fprintf(stdout, " Time to complete: %.2f seconds\n", real_time / 1000);
+	fprintf(stdout, " Time waiting for locks %.2f seconds\n", (double)(mgr->lockwait / getTicksPerNano() / 1000000000));
 
 	bt_mgrclose(mgr);
 }
