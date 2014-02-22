@@ -3,8 +3,6 @@
 #include <memory.h>
 #include <string.h>
 
-#define NEWFILES
-
 int main(int argc, char **argv) {
 	int i;
 	FILE *infile, *outFile;
@@ -12,10 +10,9 @@ int main(int argc, char **argv) {
 	char *buffer, *token;
 	long numbytes;
 
-	if (argc != 4 || strlen(argv[1]) > 39 || strlen(argv[2]) > 39 || strlen(argv[3]) > 39) {
+	if (argc != 4) {
 		fprintf(stderr, "Usage: %s filenamea filenameb outfile\n", argv[0]);
-		fprintf(stderr, "    Generates outfile cointainting filenamea concatinated with filenameb\n");
-		fprintf(stderr, "    Note that filenames must be 39 characters or less\n");
+		fprintf(stderr, "    Generates outfile containing filenamea concatinated with filenameb\n");
 		exit(0);
 	}
 

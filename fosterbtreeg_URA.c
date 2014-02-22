@@ -1990,9 +1990,11 @@ int main(int argc, char **argv)
 	BtDb *bt;
 
 	if (argc < 5) {
-		fprintf(stderr, "Usage: %s idx_file Write/Find/Multithread/Scan context_num context_string1 [context_string2...]\n", argv[0]);
-		fprintf(stderr, "  where context_num is some number that might be used in processing\n");
-		fprintf(stderr, "  context_string1 thru context_stringn are strings separated by newline\n\n");
+		fprintf(stderr, "Usage: %s somestring Write/Find/Multithread/Scan context_num context_string1 [context_string2...]\n", argv[0]);
+		fprintf(stderr, "  somestring is not in use right now\n");
+		fprintf(stderr, "  Write (w), Find (f), Multithread (m), and Scan (s) are the only options right now\n");
+		fprintf(stderr, "  context_num is some number that might be used in processing\n");
+		fprintf(stderr, "  context_string1 thru context_stringn are dependent on function\n\n");
 
 		fprintf(stderr, "  in the context of writes, the number means nothing and the strings are filenames\n");
 		fprintf(stderr, "  in the context of finds, the number is the key length and the first string is the key to find\n");
