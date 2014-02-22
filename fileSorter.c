@@ -76,18 +76,16 @@ int main(int argc, char **argv) {
 	fprintf(stdout, "Finished counting lines: %d\n", line);
 
 	// Create the outfile
-	/*
 	outFile = fopen(argv[2], "ab");
 
 	if (outFile == NULL) {
 		fprintf(stdout, "Error opening files!\n");
 		exit(0);
 	}
-	*/
 
 	// Go over buffer line times and find the minkey each time
 	// Slow but other option is to create a string array, which is a LOT of memory
-	for (n = 0; n < 1; n++) {
+	for (n = 0; n < line; n++) {
 		// Find first key
 		len = 0;
 		ch[0] = '\0';
@@ -96,7 +94,7 @@ int main(int argc, char **argv) {
 			len++;
 		}
 		minpos = (char*)(buffer + len - 1);
-		numchars = (long)len;
+		numchars = (long)(len - 1);
 
 		len = 0;
 		ch[0] = '\0';
@@ -117,32 +115,39 @@ int main(int argc, char **argv) {
 			len = 0;
 			ch[0] = '\0';
 			while (ch[0] == '\0') {
-				memcpy(ch, buffer + len, 1);
+				memcpy(ch, buffer + numchars + len, 1);
 				len++;
 			}
-			minpos = (char*)(buffer + len - 1);
-			numchars = (long)len;
+			nextpos = (char*)(buffer + numchars + len - 1);
+			numchars += (len - 1);
 
 			len = 0;
 			ch[0] = '\0';
 			while (ch[0] != '\n') {
-				memcpy(ch, minpos + len, 1);
+				memcpy(ch, nextpos + len, 1);
 				len++;
 			}
-			minlen = len - 1;
-			memcpy(minkey, minpos, minlen);
-			minkey[minlen] = '\0';
+			nextlen = len - 1;
+			memcpy(nextkey, nextpos, nextlen);
+			nextkey[nextlen] = '\0';
 			numchars += len;
 
 			// Compare with minimum and set new minimum, if necessary
+			if (strcmp(minkey, nextkey) > 0) {
+				strcpy(minkey, nextkey);
+				minlen = nextlen;
+				minpos = nextpos;
+			}
 		}
 
 		// Minimum should currently hold minimum key
 		// Write to file and delete from buffer
-
+		fputs(minkey, outFile);
+		fputc('\n', outFile);
+		memset(minpos, '\0', minlen + 1);
 	}
 
-	//fclose(outFile);
+	fclose(outFile);
 
 	free(buffer);
 
