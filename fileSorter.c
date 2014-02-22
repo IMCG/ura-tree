@@ -3,11 +3,15 @@
 #include <memory.h>
 #include <string.h>
 
+char * seek_next(char * start, long ceil) {
+
+}
+
 int main(int argc, char **argv) {
-	int line, len, i, j, n;
+	int line, len, n, minlen, nextlen;
 	FILE *infile, *outFile;
-	unsigned char ch[1];
-	char *buffer;
+	unsigned char ch[1], minkey[256], nextkey[256];
+	char *buffer, *minpos, *nextpos;
 	long numbytes, numchars;
 
 	if (argc != 3) {
@@ -24,37 +28,35 @@ int main(int argc, char **argv) {
 
 	fprintf(stdout, "started sorting\n");
 
-	/* open an existing file for reading */
+	// open an existing file for reading
 	infile = fopen(argv[1], "r");
 
-	/* quit if the file does not exist */
+	// quit if the file does not exist
 	if (infile == NULL)
 		fprintf(stderr, "Error: File %s does not exist", argv[1]), exit(0);
 
-	/* Get the number of bytes */
+	// Get the number of bytes 
 	fseek(infile, 0L, SEEK_END);
 	numbytes = ftell(infile);
 
-	/* reset the file position indicator to
-	the beginning of the file */
+	// reset the file position indicator to the beginning of the file
 	fseek(infile, 0L, SEEK_SET);
 
-	/* grab sufficient memory for the
-	buffer to hold the text */
+	// grab sufficient memory for the buffer to hold the text
 	buffer = (char*)calloc(numbytes, sizeof(char));
 
-	/* memory error */
+	// memory error 
 	if (buffer == NULL)
 		fprintf(stderr, "Error: Memory issue"), exit(0);
 
-	/* copy all the text into the buffer */
+	// copy all the text into the buffer 
 	fread(buffer, sizeof(char), numbytes, infile);
 	fclose(infile);
 
-	/* confirm we have read the file by
-	outputing it to the console */
+	// confirm we have read the file
 	fprintf(stdout, "The file called %s has been loaded\n", argv[1]);
 
+	
 	// Find out how many lines in file
 	numchars = 0;
 	line = 0;
@@ -62,38 +64,148 @@ int main(int argc, char **argv) {
 		line++;
 		len = 0;
 
-		ch[0] = 'a';
+		ch[0] = '\0';
 		while (ch[0] != '\n') {
 			memcpy(ch, buffer + numchars + len, 1);
 			len++;
 		}
 
-		//memcpy(key, buffer + numchars, len - 1);
 		numchars += len;
 	}
 
-	{
-		unsigned char keylist[line][256], tmp[256];
+	fprintf(stdout, "Finished counting lines: %d\n", line);
 
-		// Assign buffer values to keylist
+	// Create the outfile
+	/*
+	outFile = fopen(argv[2], "ab");
 
-		/* free the memory we used for the buffer */
-		free(buffer);
+	if (outFile == NULL) {
+		fprintf(stdout, "Error opening files!\n");
+		exit(0);
+	}
+	*/
 
-		// Do a selection sort on keylist
+	// Go over buffer line times and find the minkey each time
+	// Slow but other option is to create a string array, which is a LOT of memory
+	for (n = 0; n < 1; n++) {
+		// Find first key
+		len = 0;
+		ch[0] = '\0';
+		while (ch[0] == '\0') {
+			memcpy(ch, buffer + len, 1);
+			len++;
+		}
+		minpos = (char*)(buffer + len - 1);
+		numchars = (long)len;
 
-		/*Create the outfile*/
-		outFile = fopen(argv[2], "ab");
+		len = 0;
+		ch[0] = '\0';
+		while (ch[0] != '\n') {
+			memcpy(ch, minpos + len, 1);
+			len++;
+		}
+		minlen = len-1;
+		memcpy(minkey, minpos, minlen);
+		minkey[minlen] = '\0';
+		numchars += len;
 
-		if (outFile == NULL) {
-			fprintf(stdout, "Error opening files!\n");
-			exit(0);
+		// We now have the first key
+		// Compare with every other key
+		
+		while (numchars < numbytes) {
+			// Find next key
+			len = 0;
+			ch[0] = '\0';
+			while (ch[0] == '\0') {
+				memcpy(ch, buffer + len, 1);
+				len++;
+			}
+			minpos = (char*)(buffer + len - 1);
+			numchars = (long)len;
+
+			len = 0;
+			ch[0] = '\0';
+			while (ch[0] != '\n') {
+				memcpy(ch, minpos + len, 1);
+				len++;
+			}
+			minlen = len - 1;
+			memcpy(minkey, minpos, minlen);
+			minkey[minlen] = '\0';
+			numchars += len;
+
+			// Compare with minimum and set new minimum, if necessary
 		}
 
-		// Write all values to output file
+		// Minimum should currently hold minimum key
+		// Write to file and delete from buffer
 
-		fclose(outFile);
 	}
+
+	//fclose(outFile);
+
+	free(buffer);
+
+	/*
+
+	// Assign buffer values to keylist
+	numchars = 0;
+	line = 0;
+	while (numchars < numbytes) {
+		len = 0;
+
+		ch[0] = '\0';
+		while (ch[0] != '\n') {
+			memcpy(ch, buffer + numchars + len, 1);
+			len++;
+		}
+
+		memcpy(keylist + (line*256), buffer + numchars, len - 1);
+		memset(keylist + (line*256) + len, '\0', 1);
+		numchars += len;
+		line++;
+	}
+
+	fprintf(stdout, "Finished setting up string array\n");
+
+	free(buffer);
+	
+	// Do a selection sort on keylist
+	memset(tmp, '\0', 256);
+	for (i = 0; i < line-1 ; i++) {
+		min = i;
+
+		for (j = i+1; j < line; j++) {
+			if (strcmp(keylist[i], keylist[j]) < 0) {
+				min = j;
+			}
+		}
+
+		if (min != i) {
+			strcpy(tmp, keylist[i]);
+			strcpy(keylist[i], keylist[min]);
+			strcpy(keylist[min], tmp);
+		}
+	}
+
+	fprintf(stdout, "Sorted string array. Writing to file\n");
+
+	// Create the outfile
+	outFile = fopen(argv[2], "ab");
+
+	if (outFile == NULL) {
+		fprintf(stdout, "Error opening files!\n");
+		exit(0);
+	}
+
+	// Write all values to output file
+	for (i = 0; i < line; i++) {
+		strcat(keylist[i], "\n");
+		fputs(keylist[i], outFile);
+	}
+
+	
+	*/
 	
 	fprintf(stdout, "finished sorting file %s into %s\n", argv[1], argv[2]);
 

@@ -1862,7 +1862,7 @@ void *index_file(void *arg)
 			//numchars += (long)len + 1;
 			len = 0;
 
-			ch[0] = 'a';
+			ch[0] = '\0';
 			while (ch[0] != '\n') {
 				memcpy(ch, fileBuffer + numchars + len, 1);
 				len += 1;
