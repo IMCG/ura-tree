@@ -2,6 +2,7 @@
 // 02 JAN 2014
 
 // author: karl malbrain, malbrain@cal.berkeley.edu
+// edits: nicolas arciniega, naarcini@uwaterloo.ca
 
 /*
 This work, including the source code, documentation
@@ -29,7 +30,8 @@ REDISTRIBUTION OF THIS SOFTWARE.
 #define POOLSIZE 32768u // Max 65535
 #define SEGSIZE 4
 #define NUMMODE 0
-#define BUFFERSIZE 4294967296//2147483648 //1073741824
+#define BUFFERSIZE 4294967296u//2147483648 //1073741824
+#define MAXTHREADS 32
 
 #define _GNU_SOURCE
 
@@ -168,9 +170,6 @@ typedef struct {
 	uint page_bits;				// page size in bits	
 	uint seg_bits;				// seg size in pages in bits
 	uint mode;					// read-write mode
-	// WILL ONLY BE USING BUFFERPOOL
-	//char *pooladvise;			// bit maps for pool page advisements
-
 	char *buffer;			    // Buffer pool for tree
 	volatile ushort poolcnt;	// highest page pool node in use
 	volatile ushort evicted;	// last evicted hash table slot
@@ -180,7 +179,8 @@ typedef struct {
 	ushort *hash;				// hash table of pool entries
 	BtPool *pool;				// memory pool page segments
 	BtSpinLatch *latch;			// latches for pool hash slots
-	unsigned long long lockwait;
+	unsigned long long lockwait[MAXTHREADS];
+	unsigned long long lockfail[MAXTHREADS];
 } BtMgr;
 
 typedef struct {
@@ -195,6 +195,7 @@ typedef struct {
 	uid cursor_page;	// current cursor page number	
 	unsigned char *mem;	// frame, cursor, page memory buffer
 	int err;			// last error
+	int thread_id;      // thread identifier
 } BtDb;
 
 typedef enum {
@@ -385,23 +386,9 @@ void bt_mgrclose(BtMgr *mgr)
 	BtPool *pool;
 	uint slot;
 
-	// release mapped pages
-	//	note that slot zero is never used
-	// FIXME: Uses memory mapped I/O
-	/*
-	for (slot = 1; slot < mgr->poolmax; slot++) {
-		pool = mgr->pool + slot;
-		if (pool->slot)
-			munmap(pool->map, (mgr->poolmask + 1) << mgr->page_bits);
-	}
-	*/
-
-	// FIXME: Closing files
-	//close(mgr->idx);
 	free(mgr->buffer);
 	free(mgr->pool);
 	free(mgr->hash);
-	//free(mgr->pooladvise);
 	free(mgr);
 }
 
@@ -424,7 +411,7 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize, uint
 {
 	uint lvl, attr, cacheblk, last, slot, idx;
 	BtPage alloc;
-	int lockmode, offset;
+	int lockmode, offset, i;
 	off64_t size;
 	uint amt[1];
 	BtMgr* mgr;
@@ -441,51 +428,16 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize, uint
 	if (!poolmax)
 		return NULL;	// must have buffer pool
 
-	// FIXME: Initializes file
 	mgr = (BtMgr *)malloc(sizeof(BtMgr));
-	//buffer = calloc(1, sizeof(BtBuffer));
 
-	buffer = (char*)calloc(4294967296, sizeof(char));
-	//buffer->offset = 0;
-	//buffer->size = 0;
+	buffer = (char*)calloc(BUFFERSIZE, sizeof(char));
 	mgr->buffer = buffer;
-	/*
-	switch (mode & 0x7fff)
-	{
-	case BT_rw:
-		mgr->idx = open((char*)name, O_RDWR | O_CREAT, 0666);
-		lockmode = 1;
-		break;
-
-	case BT_ro:
-	default:
-		mgr->idx = open((char*)name, O_RDONLY);
-		lockmode = 0;
-		break;
-	}
-	if (mgr->idx == -1)
-		return free(mgr), NULL;
-	*/
 
 	cacheblk = 4096;	// minimum mmap segment size for unix
 
-	// FIXME: Allocates memory to file
 	size = 0;
 	alloc = malloc(BT_maxpage);
 	*amt = 0;
-
-	// read minimum page size to get root info
-
-	/*
-	if (size = lseek(mgr->idx, 0L, 2)) {
-		if (pread(mgr->idx, alloc, BT_minpage, 0) == BT_minpage)
-			bits = alloc->bits;
-		else
-			return free(mgr), free(alloc), NULL;
-	}
-	else if (mode == BT_ro)
-		return bt_mgrclose(mgr), NULL;
-		*/
 
 	mgr->page_size = 1 << bits;
 	mgr->page_bits = bits;
@@ -493,7 +445,10 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize, uint
 	mgr->poolmax = poolmax;
 	mgr->mode = mode;
 
-	mgr->lockwait = 0;
+	for (i = 0; i < MAXTHREADS; i++) {
+		mgr->lockwait[i] = 0;
+		mgr->lockfail[i] = 0;
+	}
 
 	if (cacheblk < mgr->page_size)
 		cacheblk = mgr->page_size;
@@ -517,7 +472,6 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize, uint
 	mgr->pool = calloc(poolmax, sizeof(BtPool));
 	mgr->hash = calloc(hashsize, sizeof(ushort));
 	mgr->latch = calloc(hashsize, sizeof(BtSpinLatch));
-	//mgr->pooladvise = calloc(poolmax, (mgr->poolmask + 8) / 8);
 
 	if (size || *amt)
 		goto mgrxit;
@@ -528,14 +482,9 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize, uint
 	bt_putid(alloc->right, MIN_lvl + 1);
 	alloc->bits = mgr->page_bits;
 
-	// FIXME: Writing to file
 	offset = 0;
 	memcpy(mgr->buffer, alloc, mgr->page_size);
 	offset += mgr->page_size;
-	/*
-	if (write(mgr->idx, alloc, mgr->page_size) < mgr->page_size)
-		return bt_mgrclose(mgr), NULL;
-		*/
 
 	memset(alloc, 0, 1 << bits);
 	alloc->bits = mgr->page_bits;
@@ -555,11 +504,6 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize, uint
 
 		memcpy((mgr->buffer + offset), alloc, mgr->page_size);
 		offset += mgr->page_size;
-		// FIXME: Writing to file
-		/*
-		if (write(mgr->idx, alloc, mgr->page_size) < mgr->page_size)
-			return bt_mgrclose(mgr), NULL;
-			*/
 	}
 
 	// create empty page area by writing last page of first
@@ -573,9 +517,6 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize, uint
 			last += mgr->poolmask + 1;
 
 		memcpy(mgr->buffer + (last << mgr->page_bits), alloc, mgr->page_size);
-
-		// FIXME: Writing to file
-		//pwrite(mgr->idx, alloc, mgr->page_size, last << mgr->page_bits);
 	}
 
 mgrxit:
@@ -587,12 +528,13 @@ mgrxit:
 //	open BTree access method
 //	based on buffer manager
 
-BtDb *bt_open(BtMgr *mgr)
+BtDb *bt_open(BtMgr *mgr, int thread_id)
 {
 	BtDb *bt = malloc(sizeof(*bt));
 
 	memset(bt, 0, sizeof(*bt));
 	bt->mgr = mgr;
+	bt->thread_id = thread_id;
 	bt->mem = malloc(3 * mgr->page_size);
 	bt->frame = (BtPage)bt->mem;
 	bt->zero = (BtPage)(bt->mem + 1 * mgr->page_size);
@@ -702,21 +644,10 @@ BTERR bt_mapsegment(BtDb *bt, BtPool *pool, uid page_no)
 	off64_t off = (page_no & ~bt->mgr->poolmask) << bt->mgr->page_bits;
 	int flag;
 
-	if (off > 4294967295)
+	if (off > (BUFFERSIZE-1))
 		return bt->err = BTERR_map;
 
-	// FIXME: Mapping to file
 	pool->map = bt->mgr->buffer + off;
-
-	/*
-	flag = PROT_READ | (bt->mgr->mode == BT_ro ? 0 : PROT_WRITE);
-	pool->map = mmap(0, (bt->mgr->poolmask + 1) << bt->mgr->page_bits, flag, MAP_SHARED, bt->mgr->idx, off);
-	if (pool->map == MAP_FAILED)
-		return bt->err = BTERR_map;
-		
-	// clear out madvise issued bits
-	memset(bt->mgr->pooladvise + pool->slot * ((bt->mgr->poolmask + 8) / 8), 0, (bt->mgr->poolmask + 8) / 8);
-	*/
 
 	return bt->err = 0;
 }
@@ -821,9 +752,6 @@ BtPool *bt_pinpage(BtDb *bt, uid page_no)
 		bt_spinreleasewrite(&bt->mgr->latch[victim]);
 
 		//	remove old file mapping
-		// FIXME: File mapping
-		//memset(pool->map, 0, (bt->mgr->poolmask + 1) << bt->mgr->page_bits);
-		//munmap(pool->map, (bt->mgr->poolmask + 1) << bt->mgr->page_bits);
 		pool->map = NULL;
 
 		//  create new pool mapping
@@ -849,9 +777,9 @@ BTERR bt_lockpage(BtDb *bt, uid page_no, BtLock mode, BtPage *pageptr)
 	BtPool *pool;
 	uint subpage;
 	BtPage page;
-	unsigned long long startTime, endTime;
+	//unsigned long long startTime, endTime;
 	
-	startTime = preciseTime();
+	//startTime = preciseTime();
 
 	//	find/create maping in pool table
 	//	  and pin our pool slot
@@ -859,23 +787,12 @@ BTERR bt_lockpage(BtDb *bt, uid page_no, BtLock mode, BtPage *pageptr)
 	if (pool = bt_pinpage(bt, page_no))
 		subpage = (uint)(page_no & bt->mgr->poolmask); // page within mapping
 	else {
-		endTime = preciseTime();
-		bt->mgr->lockwait += (endTime - startTime);
+		//endTime = preciseTime();
+		//bt->mgr->lockwait += (endTime - startTime);
 		return bt->err;
 	}
 
 	page = (BtPage)(pool->map + (subpage << bt->mgr->page_bits));
-	/*
-	{
-		uint idx = subpage / 8;
-		uint bit = subpage % 8;
-
-		if (~((bt->mgr->pooladvise + pool->slot * ((bt->mgr->poolmask + 8) / 8))[idx] >> bit) & 1) {
-			madvise(page, bt->mgr->page_size, MADV_WILLNEED);
-			(bt->mgr->pooladvise + pool->slot * ((bt->mgr->poolmask + 8) / 8))[idx] |= 1 << bit;
-		}
-	}
-	*/
 
 	switch (mode) {
 	case BtLockRead:
@@ -894,16 +811,16 @@ BTERR bt_lockpage(BtDb *bt, uid page_no, BtLock mode, BtPage *pageptr)
 		bt_spinwritelock(page->parent);
 		break;
 	default:
-		endTime = preciseTime();
-		bt->mgr->lockwait += (endTime - startTime);
+		//endTime = preciseTime();
+		//bt->mgr->lockwait += (endTime - startTime);
 		return bt->err = BTERR_lock;
 	}
 
 	if (pageptr)
 		*pageptr = page;
 
-	endTime = preciseTime();
-	bt->mgr->lockwait += (endTime - startTime);
+	//endTime = preciseTime();
+	//bt->mgr->lockwait += (endTime - startTime);
 	return bt->err = 0;
 }
 
@@ -1030,16 +947,13 @@ uid bt_newpage(BtDb *bt, BtPage page)
 		reuse = 0;
 	}
 
-	// FIXME: Adding to file
 	memset(bt->zero, 0, 3 * sizeof(BtSpinLatch)); // clear locks
 	memcpy((char *)bt->zero + 3 * sizeof(BtSpinLatch), (char *)page + 3 * sizeof(BtSpinLatch), bt->mgr->page_size - 3 * sizeof(BtSpinLatch));
 
-	if ((new_page << bt->mgr->page_bits) + bt->mgr->page_size > 4294967295)
+	if ((new_page << bt->mgr->page_bits) + bt->mgr->page_size > (BUFFERSIZE-1))
 		return bt->err = BTERR_wrt, 0;
 
 	memcpy(bt->mgr->buffer + (new_page << bt->mgr->page_bits), bt->zero, bt->mgr->page_size);
-	//if (pwrite(bt->mgr->idx, bt->zero, bt->mgr->page_size, new_page << bt->mgr->page_bits) < bt->mgr->page_size)
-	//	return bt->err = BTERR_wrt, 0;
 
 	// if writing first page of pool block, zero last page in the block
 
@@ -1048,12 +962,10 @@ uid bt_newpage(BtDb *bt, BtPage page)
 		// use zero buffer to write zeros
 		memset(bt->zero, 0, bt->mgr->page_size);
 
-		if (((new_page | bt->mgr->poolmask) << bt->mgr->page_bits) + bt->mgr->page_size > 4294967295)
+		if (((new_page | bt->mgr->poolmask) << bt->mgr->page_bits) + bt->mgr->page_size > (BUFFERSIZE-1))
 			return bt->err = BTERR_wrt, 0;
 
 		memcpy(bt->mgr->buffer + ((new_page | bt->mgr->poolmask) << bt->mgr->page_bits), bt->zero, bt->mgr->page_size);
-		//if (pwrite(bt->mgr->idx, bt->zero, bt->mgr->page_size, (new_page | bt->mgr->poolmask) << bt->mgr->page_bits) < bt->mgr->page_size)
-		//	return bt->err = BTERR_wrt, 0;
 	}
 
 	// unlock allocation latch and return new page no
@@ -1828,7 +1740,7 @@ void *index_file(void *arg)
 	unsigned char ch[1];
 	long numbytes;
 
-	bt = bt_open(args->mgr);
+	bt = bt_open(args->mgr, args->idx);
 	time(tod);
 
 	switch (args->type | 0x20)
@@ -1899,11 +1811,6 @@ void *index_file(void *arg)
 		free(fileBuffer);
 
 		fprintf(stdout, "finished %s for %d keys\n", args->ctx_string, line);
-
-		// Spit out first chunk of memory in buffer
-		//memcpy(key, bt->mgr->buffer + 1000000000, 150);
-		//key[150] = '\0';
-		//fprintf(stdout, "Buffer: %s\n", key);
 
 		/*if (rowid = bt_findkey(bt, "police", 6)) {
 			fprintf(stdout, "Found the key in row: %d\n", rowid);
@@ -2054,7 +1961,18 @@ int main(int argc, char **argv)
 	gettimeofday(&stop, NULL);
 	real_time = 1000.0 * (stop.tv_sec - start.tv_sec) + 0.001 * (stop.tv_usec - start.tv_usec);
 	fprintf(stdout, " Time to complete: %.2f seconds\n", real_time / 1000);
-	fprintf(stdout, " Time waiting for locks %.2f seconds\n", (double)(mgr->lockwait / getTicksPerNano() / 1000000000));
+	fprintf(stdout, " Time waiting for locks:\n");
+	for (idx = 0; idx < MAXTHREADS; idx++) {
+		if (mgr->lockwait[idx] > 0) {
+			fprintf(stdout, "     Thread %d - %.2f seconds\n", idx, (double)(mgr->lockwait[idx] / getTicksPerNano() / 1000000000));
+		}
+	}
+	fprintf(stdout, " Number of locks failed:\n");
+	for (idx = 0; idx < MAXTHREADS; idx++) {
+		if (mgr->lockfail[idx] > 0) {
+			fprintf(stdout, "     Thread %d - %d attempts\n", idx, (double)(mgr->lockfail[idx]));
+		}
+	}
 
 	bt_mgrclose(mgr);
 }
