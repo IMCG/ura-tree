@@ -146,6 +146,7 @@ typedef struct Page {
 
 //	The memory mapping pool table buffer manager entry
 
+// FIXME: Avoid using pool
 typedef struct {
 	unsigned long long int lru;	// number of times accessed
 	uid  basepage;				// mapped base page number
@@ -166,12 +167,16 @@ typedef struct {
 	char *buffer;			    // Buffer pool for tree
 	volatile ushort poolcnt;	// highest page pool node in use
 	volatile ushort evicted;	// last evicted hash table slot
+
+	// FIXME: Remove pool usage, add just a poolstart pointer
 	ushort poolmax;				// highest page pool node allocated
 	ushort poolmask;			// total size of pages in mmap segment - 1
 	ushort hashsize;			// size of Hash Table for pool entries
 	ushort *hash;				// hash table of pool entries
 	BtPool *pool;				// memory pool page segments
 	BtSpinLatch *latch;			// latches for pool hash slots
+
+	char *pool_ptr;             // Current position of pool (replaces BtPool)
 	unsigned long long totalwait[MAXTHREADS];
 	unsigned long long lockwait[MAXTHREADS];
 	unsigned long long lockfail[MAXTHREADS];
@@ -213,6 +218,7 @@ extern uint bt_startkey(BtDb *bt, unsigned char *key, uint len);
 extern uint bt_nextkey(BtDb *bt, uint slot);
 
 //	manager functions
+// FIXME: Remove need for poolsize, segsize, and hashsize
 extern BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolsize, uint segsize, uint hashsize);
 void bt_mgrclose(BtMgr *mgr);
 
@@ -401,11 +407,12 @@ void bt_close(BtDb *bt)
 //	call with file_name, BT_openmode, bits in page size (e.g. 16),
 //		size of mapped page pool (e.g. 8192)
 
+// FIXME: remove need for poolmax, segsize, and hashsize
 BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize, uint hashsize)
 {
-	uint lvl, attr, cacheblk, last, slot, idx;
+	uint lvl, cacheblk, last;
 	BtPage alloc;
-	int lockmode, offset, i;
+	int offset, i;
 	BtMgr* mgr;
 	BtKey key;
 	char* buffer;
