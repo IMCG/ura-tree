@@ -23,7 +23,6 @@ REDISTRIBUTION OF THIS SOFTWARE.
 
 #define _FILE_OFFSET_BITS 64
 #define _LARGEFILE64_SOURCE
-#define STANDALONE
 
 // Constants
 #define BITS 14
@@ -49,12 +48,6 @@ REDISTRIBUTION OF THIS SOFTWARE.
 #include "utils.h"
 
 typedef unsigned long long	uid;
-
-#ifndef unix
-typedef unsigned long long	off64_t;
-typedef unsigned short		ushort;
-typedef unsigned int		uint;
-#endif
 
 #define BT_ro 0x6f72	// ro
 #define BT_rw 0x7772	// rw
@@ -179,6 +172,7 @@ typedef struct {
 	ushort *hash;				// hash table of pool entries
 	BtPool *pool;				// memory pool page segments
 	BtSpinLatch *latch;			// latches for pool hash slots
+	unsigned long long totalwait[MAXTHREADS];
 	unsigned long long lockwait[MAXTHREADS];
 	unsigned long long lockfail[MAXTHREADS];
 } BtMgr;
@@ -211,7 +205,7 @@ typedef enum {
 
 // B-Tree functions
 extern void bt_close(BtDb *bt);
-extern BtDb *bt_open(BtMgr *mgr);
+extern BtDb *bt_open(BtMgr *mgr, int thread_id);
 extern BTERR  bt_insertkey(BtDb *bt, unsigned char *key, uint len, uid id, uint tod);
 extern BTERR  bt_deletekey(BtDb *bt, unsigned char *key, uint len, uint lvl);
 extern uid bt_findkey(BtDb *bt, unsigned char *key, uint len);
@@ -412,8 +406,6 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize, uint
 	uint lvl, attr, cacheblk, last, slot, idx;
 	BtPage alloc;
 	int lockmode, offset, i;
-	off64_t size;
-	uint amt[1];
 	BtMgr* mgr;
 	BtKey key;
 	char* buffer;
@@ -435,9 +427,7 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize, uint
 
 	cacheblk = 4096;	// minimum mmap segment size for unix
 
-	size = 0;
 	alloc = malloc(BT_maxpage);
-	*amt = 0;
 
 	mgr->page_size = 1 << bits;
 	mgr->page_bits = bits;
@@ -446,6 +436,7 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize, uint
 	mgr->mode = mode;
 
 	for (i = 0; i < MAXTHREADS; i++) {
+		mgr->totalwait[i] = 0;
 		mgr->lockwait[i] = 0;
 		mgr->lockfail[i] = 0;
 	}
@@ -472,9 +463,6 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize, uint
 	mgr->pool = calloc(poolmax, sizeof(BtPool));
 	mgr->hash = calloc(hashsize, sizeof(ushort));
 	mgr->latch = calloc(hashsize, sizeof(BtSpinLatch));
-
-	if (size || *amt)
-		goto mgrxit;
 
 	// initializes an empty b-tree with root page and page of leaves
 
@@ -519,7 +507,6 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize, uint
 		memcpy(mgr->buffer + (last << mgr->page_bits), alloc, mgr->page_size);
 	}
 
-mgrxit:
 	free(alloc);
 
 	return mgr;
@@ -1712,9 +1699,6 @@ uint bt_tod(BtDb *bt, uint slot)
 	return slotptr(bt->cursor, slot)->tod;
 }
 
-
-#ifdef STANDALONE
-
 typedef struct {
 	char type, idx;
 	char *ctx_string;
@@ -1961,6 +1945,12 @@ int main(int argc, char **argv)
 	gettimeofday(&stop, NULL);
 	real_time = 1000.0 * (stop.tv_sec - start.tv_sec) + 0.001 * (stop.tv_usec - start.tv_usec);
 	fprintf(stdout, " Time to complete: %.2f seconds\n", real_time / 1000);
+	fprintf(stdout, " Total waiting for locks:\n");
+	for (idx = 0; idx < MAXTHREADS; idx++) {
+		if (mgr->totalwait[idx] > 0) {
+			fprintf(stdout, "     Thread %d - %.2f seconds\n", idx, (double)(mgr->totalwait[idx] / getTicksPerNano() / 1000000000));
+		}
+	}
 	fprintf(stdout, " Time waiting for locks:\n");
 	for (idx = 0; idx < MAXTHREADS; idx++) {
 		if (mgr->lockwait[idx] > 0) {
@@ -1970,11 +1960,9 @@ int main(int argc, char **argv)
 	fprintf(stdout, " Number of locks failed:\n");
 	for (idx = 0; idx < MAXTHREADS; idx++) {
 		if (mgr->lockfail[idx] > 0) {
-			fprintf(stdout, "     Thread %d - %d attempts\n", idx, (double)(mgr->lockfail[idx]));
+			fprintf(stdout, "     Thread %d - %llu attempts\n", idx, mgr->lockfail[idx]);
 		}
 	}
 
 	bt_mgrclose(mgr);
 }
-
-#endif	//STANDALONE

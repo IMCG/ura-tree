@@ -1,0 +1,386 @@
+/*
+* All tests performed on Surface Pro
+* - 4.0 GB DDR3
+* - Intel(R) Core(TM) i5-3317U CPU @ 1.70GHz
+* - 2 Cores, 4 Logical processors
+* - 128 GB SSD Disk (SAMSUNG MZMPC128HBFU-000MV)
+*/
+
+// Single-threaded indexing, file pre-loaded to memory
+>> fosterbtreeg_URA single.db w 0 skew1_1
+started indexing for skew1_1
+The file called skew1_1 has been loaded
+finished skew1_1 for 177999203 keys
+ Time to complete: 349.00 seconds
+
+// Verification of key inserts
+>> fosterbtree_URA single.db s 0 skew1_1
+started reading
+Finished reading 612220 keys
+ Time to complete: 0.00 seconds
+
+// Two-threaded indexing, files pre-loaded to memory
+>> fosterbtreeg_URA multi.db w 0 skew1_1a skew1_1b
+started indexing for skew1_1a
+started indexing for skew1_1b
+The file called skew1_1b has been loaded
+The file called skew1_1a has been loaded
+finished skew1_1b for 88999602 keys
+finished skew1_1a for 88999601 keys
+ Time to complete: 253.00 seconds
+
+// Verification of key inserts
+>> fosterbtree_URA multi.db s 0 skew1_1
+started reading
+Finished reading 612220 keys
+ Time to complete: 0.00 seconds
+
+// Secondary test for inserts
+>> fosterbtree_URA multi.db f 6 police
+started allocating at page: 2
+done allocating until page: 130064
+Found the key in row: 88992794
+Found the slot: 186
+police
+Printing out page:
+pointerns
+pointers
+pointes
+pointilism
+pointillism
+pointillist
+pointillistic
+pointing
+pointings
+pointld
+pointless
+pointlesseople
+pointlessly
+pointlessness
+pointlike
+pointlistld
+pointly
+pointman
+pointo
+pointout
+points
+pointsman
+pointsmen
+pointto
+pointwise
+pointwith
+pointy
+poiont
+poise
+poised
+poisen
+poisened
+poisening
+poisenous
+poises
+poiseuille
+poising
+poisining
+poision
+poisioning
+poisitions
+poison
+poisonbait
+poisoned
+poisoner
+poisoners
+poisongas
+poisoning
+poisonings
+poisonous
+poisonously
+poisons
+poissance
+poisson
+poissonian
+poissonier
+poissons
+poit
+poited
+poiter
+poitical
+poitics
+poitive
+poitns
+poits
+poivre
+poject
+pojection
+pojections
+poka
+pokazukha
+poke
+poked
+poker
+pokerfaced
+pokerod
+pokery
+pokes
+pokeweed
+pokey
+pokeying
+pokies
+poking
+pokkuri
+poky
+pol
+polA
+polAl
+polC
+polalization
+poland
+polar
+polarcap
+polarential
+polargraphic
+polargrass
+polari
+polariation
+polarigenic
+polarimeter
+polarimeters
+polarimetric
+polarimetrical
+polarimetrically
+polarimetry
+polaris
+polarisabilities
+polarisability
+polarisable
+polarisation
+polarisations
+polariscope
+polarise
+polarised
+polariser
+polarising
+polarities
+polariton
+polaritons
+polarity
+polarizabilites
+polarizabilities
+polarizabilitiy
+polarizability
+polarizable
+polarizaion
+polarization
+polarizational
+polarizations
+polarizaton
+polarize
+polarized
+polarizer
+polarizers
+polarizes
+polarizing
+polariztion
+polarly
+polarogram
+polarograms
+polarograph
+polarographic
+polarographical
+polarographically
+polarography
+polarogyaphy
+polaroid
+polaron
+polaronic
+polarons
+polars
+polation
+polcal
+polcie
+polciy
+polcrystalline
+polcy
+poldat
+polder
+pole
+poleaxed
+poleaxing
+polecat
+polecats
+poled
+poleface
+polemic
+polemical
+polemically
+polemicist
+polemicizing
+polemics
+polenta
+polepiece
+poles
+polethylene
+poletimber
+poletop
+poletraps
+poleward
+polewards
+poli
+polical
+polically
+policce
+police
+policed
+policeman
+policemen
+policers
+polices
+policesaid
+policewoman
+policewomen
+polichemotherapy
+policial
+policiers
+policies
+policing
+policital
+policlinics
+policmen
+policrystalline
+policrystals
+policty
+policy
+policyclic
+policyholder
+policyholders
+policymaker
+policymakers
+policymaking
+policyowenr
+policyowner
+policyowners
+polidal
+polide
+polidisperse
+polie
+poliester
+poliethylene
+poliical
+poliice
+poliicy
+poliitcal
+poliitical
+polimeric
+polimerization
+polimerized
+polimorphus
+polinate
+polination
+polinator
+poling
+poliniferous
+polinom
+polinomial
+polio
+poliomyelitis
+polionotus
+poliovirtus
+poliovirus
+polioviruses
+poliposis
+polips
+polis
+polish
+polished
+polisher
+polishers
+polishes
+polishing
+polishings
+polishng
+politan
+politbureau
+politburo
+politcal
+politcians
+politcs
+polite
+politely
+politeness
+politetrafluoroethylene
+politial
+politic
+politica
+politicaes
+political
+politicalaction
+politicalization
+politicallly
+politically
+politicals
+politicalthinking
+politican
+politicans
+politiced
+politicee
+politices
+politici
+politicial
+politicials
+politician
+politicians
+politicies
+politicis
+politicisation
+politicism
+politicization
+politicizations
+politicize
+politicized
+politicizes
+politicizing
+politicked
+politicking
+politicl
+politico
+politicos
+politics
+polities
+politik
+politional
+politique
+polititians
+politization
+politropic
+polity
+poliuretaniche
+polivinylchloride
+polized
+polk
+polka
+polkas
+poll
+pollable
+pollack
+pollai
+pollakisuria
+pollakiura
+pollard
+pollarded
+polldat
+polled
+pollees
+pollen
+pollenation
+pollenized
+pollens
+poller
+pollets
+pollinate
+pollinated
+pollinates
+pollinating
+pollination
+pollinaton
+pollinator
+pollinators
+ Time to complete: 1.00 seconds

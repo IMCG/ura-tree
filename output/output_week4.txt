@@ -1,0 +1,32 @@
+/*
+* All tests performed on Manta
+*/
+>>./fosterbtreeg_URA asdf w 0 skew1_1
+started indexing for skew1_1
+The file called skew1_1 has been loaded
+finished skew1_1 for 177999203 keys
+ Time to complete: 388.55 seconds
+ 
+ >>./fosterbtreeg_URA asdf w 0 skew1_1a skew1_1b
+started indexing for skew1_1a
+started indexing for skew1_1b
+The file called skew1_1b has been loaded
+The file called skew1_1a has been loaded
+finished skew1_1b for 88999602 keys
+finished skew1_1a for 88999601 keys
+ Time to complete: 451.04 seconds
+
+>>./fosterbtreeg_URA asdf w 0 skew1_1aa skew1_1ab skew1_1ba skew1_1bb
+started indexing for skew1_1bb
+started indexing for skew1_1aa
+started indexing for skew1_1ba
+started indexing for skew1_1ab
+The file called skew1_1ba has been loaded
+The file called skew1_1aa has been loaded
+The file called skew1_1bb has been loaded
+The file called skew1_1ab has been loaded
+finished skew1_1aa for 44499800 keys
+finished skew1_1bb for 44499801 keys
+finished skew1_1ba for 44499801 keys
+finished skew1_1ab for 44499801 keys
+ Time to complete: 458.37 seconds

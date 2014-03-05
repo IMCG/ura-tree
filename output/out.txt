@@ -1,0 +1,14 @@
+started indexing for sorted1_1aa
+started indexing for sorted1_1ab
+started indexing for sorted1_1ba
+started indexing for sorted1_1bb
+The file called sorted1_1ab has been loaded
+The file called sorted1_1aa has been loaded
+The file called sorted1_1bb has been loaded
+The file called sorted1_1ba has been loaded
+finished sorted1_1ba for 44499801 keys
+finished sorted1_1ab for 44499801 keys
+finished sorted1_1bb for 44499801 keys
+finished sorted1_1aa for 44499800 keys
+ Time to complete: 949.36 seconds
+ Time waiting for locks 1633.85 seconds

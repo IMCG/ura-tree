@@ -1,0 +1,106 @@
+/*
+* All tests run on manta
+*/
+
+// While running on two-threaded indexing of skew1_1, check io usage:
+// Main thread
+>> cat /proc/100878/io
+rchar: 1079478144
+wchar: 142
+syscr: 14
+syscw: 4
+read_bytes: 0
+write_bytes: 0
+cancelled_write_bytes: 0
+
+// Indexing thread A
+>> cat /proc/100879/io
+rchar: 1079478144
+wchar: 142
+syscr: 14
+syscw: 4
+read_bytes: 0
+write_bytes: 0
+cancelled_write_bytes: 0
+
+// Indexing thread B
+>> cat /proc/100878/io
+rchar: 1079478144
+wchar: 142
+syscr: 14
+syscw: 4
+read_bytes: 0
+write_bytes: 0
+cancelled_write_bytes: 0
+
+// Single-threaded time on skewed set
+>> ./fosterbtreeg_URA asdf w 0 skew1_1
+started indexing for skew1_1
+The file called skew1_1 has been loaded
+finished skew1_1 for 177999203 keys
+ Time to complete: 430.64 seconds
+ Time waiting for locks 126.73 seconds
+
+// Single-threaded time on sorted set
+>> ./fosterbtreeg_URA asdf w 0 sorted1_1
+started indexing for sorted1_1
+The file called sorted1_1 has been loaded
+finished sorted1_1 for 177999203 keys
+ Time to complete: 293.25 seconds
+ Time waiting for locks 109.28 seconds
+
+// Two-threaded time on skewed set
+>> ./fosterbtreeg_URA asdf w 0 skew1_1a skew1_1b
+started indexing for skew1_1a
+started indexing for skew1_1b
+The file called skew1_1b has been loaded
+The file called skew1_1a has been loaded
+finished skew1_1a for 88999601 keys
+finished skew1_1b for 88999602 keys
+ Time to complete: 787.44 seconds
+ Time waiting for locks 553.75 seconds
+
+// Two-threaded time on sorted sets (lots of lock contention)
+>> ./fosterbtreeg_URA asdf w 0 sorted1_1a sorted1_1b
+started indexing for sorted1_1a
+started indexing for sorted1_1b
+The file called sorted1_1b has been loaded
+The file called sorted1_1a has been loaded
+finished sorted1_1a for 88999601 keys
+finished sorted1_1b for 88999602 keys
+ Time to complete: 664.26 seconds
+ Time waiting for locks 504.19 seconds
+
+// Four-threaded time on skewed set
+>> ./fosterbtreeg_URA asdf w 0 skew1_1aa skew1_1ab skew1_1ba skew1_1bb
+started indexing for skew1_1aa
+started indexing for skew1_1ab
+started indexing for skew1_1ba
+started indexing for skew1_1bb
+The file called skew1_1ba has been loaded
+The file called skew1_1aa has been loaded
+The file called skew1_1bb has been loaded
+The file called skew1_1ab has been loaded
+finished skew1_1aa for 44499800 keys
+finished skew1_1ab for 44499801 keys
+finished skew1_1bb for 44499801 keys
+finished skew1_1ba for 44499801 keys
+ Time to complete: 739.22 seconds
+ Time waiting for locks 931.95 seconds
+
+// Four-threaded time on sorted sets (lots of lock contention)
+>> ./fosterbtreeg_URA asdf w 0 sorted1_1aa sorted1_1ab sorted1_1ba sorted1_1bb
+started indexing for sorted1_1aa
+started indexing for sorted1_1ab
+started indexing for sorted1_1ba
+started indexing for sorted1_1bb
+The file called sorted1_1ab has been loaded
+The file called sorted1_1aa has been loaded
+The file called sorted1_1bb has been loaded
+The file called sorted1_1ba has been loaded
+finished sorted1_1ba for 44499801 keys
+finished sorted1_1ab for 44499801 keys
+finished sorted1_1bb for 44499801 keys
+finished sorted1_1aa for 44499800 keys
+ Time to complete: 949.36 seconds
+ Time waiting for locks 1633.85 seconds
