@@ -144,19 +144,6 @@ typedef struct Page {
 	unsigned char right[BtId];	// page number to right
 } *BtPage;
 
-//	The memory mapping pool table buffer manager entry
-
-// FIXME: Avoid using pool
-typedef struct {
-	unsigned long long int lru;	// number of times accessed
-	uid  basepage;				// mapped base page number
-	char *map;					// mapped memory pointer
-	volatile ushort pin;		// mapped page pin counter
-	ushort slot;				// slot index in this array
-	void *hashprev;				// previous pool entry for the same hash idx
-	void *hashnext;				// next pool entry for the same hash idx
-} BtPool;
-
 //	The object structure for Btree access
 
 typedef struct {
@@ -167,16 +154,8 @@ typedef struct {
 	char *buffer;			    // Buffer pool for tree
 	volatile ushort poolcnt;	// highest page pool node in use
 	volatile ushort evicted;	// last evicted hash table slot
-
-	// FIXME: Remove pool usage, add just a poolstart pointer
 	ushort poolmax;				// highest page pool node allocated
-	ushort poolmask;			// total size of pages in mmap segment - 1
-	ushort hashsize;			// size of Hash Table for pool entries
-	ushort *hash;				// hash table of pool entries
-	BtPool *pool;				// memory pool page segments
-	BtSpinLatch *latch;			// latches for pool hash slots
-
-	char *pool_ptr;             // Current position of pool (replaces BtPool)
+	ushort poolmask;			// total size of pages in logical memory pool segment - 1
 	unsigned long long totalwait[MAXTHREADS];
 	unsigned long long lockwait[MAXTHREADS];
 	unsigned long long lockfail[MAXTHREADS];
@@ -218,8 +197,7 @@ extern uint bt_startkey(BtDb *bt, unsigned char *key, uint len);
 extern uint bt_nextkey(BtDb *bt, uint slot);
 
 //	manager functions
-// FIXME: Remove need for poolsize, segsize, and hashsize
-extern BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolsize, uint segsize, uint hashsize);
+extern BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolsize, uint segsize);
 void bt_mgrclose(BtMgr *mgr);
 
 //  Helper functions to return cursor slot values
@@ -383,12 +361,9 @@ void bt_spinreleaseread(BtSpinLatch *latch)
 
 void bt_mgrclose(BtMgr *mgr)
 {
-	BtPool *pool;
 	uint slot;
 
 	free(mgr->buffer);
-	free(mgr->pool);
-	free(mgr->hash);
 	free(mgr);
 }
 
@@ -407,10 +382,9 @@ void bt_close(BtDb *bt)
 //	call with file_name, BT_openmode, bits in page size (e.g. 16),
 //		size of mapped page pool (e.g. 8192)
 
-// FIXME: remove need for poolmax, segsize, and hashsize
-BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize, uint hashsize)
+BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize)
 {
-	uint lvl, cacheblk, last;
+	uint lvl, last;
 	BtPage alloc;
 	int offset, i;
 	BtMgr* mgr;
@@ -432,8 +406,6 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize, uint
 	buffer = (char*)calloc(BUFFERSIZE, sizeof(char));
 	mgr->buffer = buffer;
 
-	cacheblk = 4096;	// minimum mmap segment size for unix
-
 	alloc = malloc(BT_maxpage);
 
 	mgr->page_size = 1 << bits;
@@ -448,14 +420,10 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize, uint
 		mgr->lockfail[i] = 0;
 	}
 
-	if (cacheblk < mgr->page_size)
-		cacheblk = mgr->page_size;
-
-	//  mask for partial memmaps
-
+	//  mask for logical memory pools
 	mgr->poolmask = (cacheblk >> bits) - 1;
 
-	//	see if requested size of pages per memmap is greater
+	//	see if requested size of pages per pool is greater
 
 	if ((1 << segsize) > mgr->poolmask)
 		mgr->poolmask = (1 << segsize) - 1;
@@ -464,12 +432,6 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize, uint
 
 	while ((1 << mgr->seg_bits) <= mgr->poolmask)
 		mgr->seg_bits++;
-
-	mgr->hashsize = hashsize;
-
-	mgr->pool = calloc(poolmax, sizeof(BtPool));
-	mgr->hash = calloc(hashsize, sizeof(ushort));
-	mgr->latch = calloc(hashsize, sizeof(BtSpinLatch));
 
 	// initializes an empty b-tree with root page and page of leaves
 
@@ -503,7 +465,6 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize, uint
 
 	// create empty page area by writing last page of first
 	// segment area (other pages are zeroed by O/S)
-
 	if (mgr->poolmask) {
 		memset(alloc, 0, mgr->page_size);
 		last = mgr->poolmask;
@@ -557,210 +518,20 @@ int keycmp(BtKey key1, unsigned char *key2, uint len2)
 
 //	Buffer Pool mgr
 
-// find segment in pool
-// must be called with hashslot idx locked
-//	return NULL if not there
-//	otherwise return node
-
-BtPool *bt_findpool(BtDb *bt, uid page_no, uint idx)
-{
-	BtPool *pool;
-	uint slot;
-
-	// compute start of hash chain in pool
-
-	if (slot = bt->mgr->hash[idx])
-		pool = bt->mgr->pool + slot;
-	else
-		return NULL;
-
-	page_no &= ~bt->mgr->poolmask;
-
-	while (pool->basepage != page_no)
-	if (pool = pool->hashnext)
-		continue;
-	else
-		return NULL;
-
-	return pool;
-}
-
-// add segment to hash table
-
-void bt_linkhash(BtDb *bt, BtPool *pool, uid page_no, int idx)
-{
-	BtPool *node;
-	uint slot;
-
-	pool->hashprev = pool->hashnext = NULL;
-	pool->basepage = page_no & ~bt->mgr->poolmask;
-	pool->lru = 1;
-
-	if (slot = bt->mgr->hash[idx]) {
-		node = bt->mgr->pool + slot;
-		pool->hashnext = node;
-		node->hashprev = pool;
-	}
-
-	bt->mgr->hash[idx] = pool->slot;
-}
-
-//	find best segment to evict from buffer pool
-
-BtPool *bt_findlru(BtDb *bt, uint hashslot)
-{
-	unsigned long long int target = ~0LL;
-	BtPool *pool = NULL, *node;
-
-	if (!hashslot)
-		return NULL;
-
-	node = bt->mgr->pool + hashslot;
-
-	//	scan pool entries under hash table slot
-
-	do {
-		if (node->pin)
-			continue;
-		if (node->lru > target)
-			continue;
-		target = node->lru;
-		pool = node;
-	} while (node = node->hashnext);
-
-	return pool;
-}
-
-//  map new buffer pool segment to virtual memory
-
-BTERR bt_mapsegment(BtDb *bt, BtPool *pool, uid page_no)
-{
-	off64_t off = (page_no & ~bt->mgr->poolmask) << bt->mgr->page_bits;
-	int flag;
-
-	if (off > (BUFFERSIZE-1))
-		return bt->err = BTERR_map;
-
-	pool->map = bt->mgr->buffer + off;
-
-	return bt->err = 0;
-}
-
 //	find or place requested page in segment-pool
-//	return pool table entry, incrementing pin
+//	return pool table entry
 
-BtPool *bt_pinpage(BtDb *bt, uid page_no)
+char *bt_findpool(BtDb *bt, uid page_no)
 {
-	BtPool *pool, *node, *next;
-	uint slot, idx, victim;
+	char *pool_ptr;
+	off64_t off = (page_no & ~bt->mgr->poolmask) << bt->mgr->page_bits;
 
-	//	lock hash table chain
+	if (off > (BUFFERSIZE - 1))
+		return NULL;
 
-	idx = (uint)(page_no >> bt->mgr->seg_bits) % bt->mgr->hashsize;
-	bt_spinreadlock(&bt->mgr->latch[idx]);
+	pool_ptr = bt->mgr->buffer + off;
 
-	//	look up in hash table
-
-	if (pool = bt_findpool(bt, page_no, idx)) {
-
-		__sync_fetch_and_add(&pool->pin, 1);
-
-		bt_spinreleaseread(&bt->mgr->latch[idx]);
-		pool->lru++;
-		return pool;
-	}
-
-	//	upgrade to write lock
-
-	bt_spinreleaseread(&bt->mgr->latch[idx]);
-	bt_spinwritelock(&bt->mgr->latch[idx]);
-
-	// try to find page in pool with write lock
-
-	if (pool = bt_findpool(bt, page_no, idx)) {
-
-		__sync_fetch_and_add(&pool->pin, 1);
-
-		bt_spinreleasewrite(&bt->mgr->latch[idx]);
-		pool->lru++;
-		return pool;
-	}
-
-	// allocate a new pool node
-	// and add to hash table
-
-	slot = __sync_fetch_and_add(&bt->mgr->poolcnt, 1);
-
-	if (++slot < bt->mgr->poolmax) {
-		pool = bt->mgr->pool + slot;
-		pool->slot = slot;
-
-		if (bt_mapsegment(bt, pool, page_no))
-			return NULL;
-
-		bt_linkhash(bt, pool, page_no, idx);
-
-		__sync_fetch_and_add(&pool->pin, 1);
-
-		bt_spinreleasewrite(&bt->mgr->latch[idx]);
-		return pool;
-	}
-
-	// pool table is full
-	//	find best pool entry to evict
-
-	__sync_fetch_and_add(&bt->mgr->poolcnt, -1);
-
-	while (1) {
-		victim = __sync_fetch_and_add(&bt->mgr->evicted, 1);
-
-		victim %= bt->mgr->hashsize;
-
-		// try to get write lock
-		//	skip entry if not obtained
-
-		if (!bt_spinwritetry(&bt->mgr->latch[victim]))
-			continue;
-
-		//  if cache entry is empty
-		//	or no slots are unpinned
-		//	skip this entry
-
-		if (!(pool = bt_findlru(bt, bt->mgr->hash[victim]))) {
-			bt_spinreleasewrite(&bt->mgr->latch[victim]);
-			continue;
-		}
-
-		// unlink victim pool node from hash table
-
-		if (node = pool->hashprev)
-			node->hashnext = pool->hashnext;
-		else if (node = pool->hashnext)
-			bt->mgr->hash[victim] = node->slot;
-		else
-			bt->mgr->hash[victim] = 0;
-
-		if (node = pool->hashnext)
-			node->hashprev = pool->hashprev;
-
-		bt_spinreleasewrite(&bt->mgr->latch[victim]);
-
-		//	remove old file mapping
-		pool->map = NULL;
-
-		//  create new pool mapping
-		//  and link into hash table
-
-		if (bt_mapsegment(bt, pool, page_no))
-			return NULL;
-
-		bt_linkhash(bt, pool, page_no, idx);
-
-		__sync_fetch_and_add(&pool->pin, 1);
-
-		bt_spinreleasewrite(&bt->mgr->latch[idx]);
-		return pool;
-	}
+	return pool_ptr;
 }
 
 // place write, read, or parent lock on requested page_no.
@@ -768,17 +539,16 @@ BtPool *bt_pinpage(BtDb *bt, uid page_no)
 
 BTERR bt_lockpage(BtDb *bt, uid page_no, BtLock mode, BtPage *pageptr)
 {
-	BtPool *pool;
+	char *pool_ptr;
 	uint subpage;
 	BtPage page;
+	
 	//unsigned long long startTime, endTime;
 	
 	//startTime = preciseTime();
 
-	//	find/create maping in pool table
-	//	  and pin our pool slot
-
-	if (pool = bt_pinpage(bt, page_no))
+	//	find pool start
+	if (pool_ptr = bt_findpool(bt, page_no))
 		subpage = (uint)(page_no & bt->mgr->poolmask); // page within mapping
 	else {
 		//endTime = preciseTime();
@@ -786,7 +556,7 @@ BTERR bt_lockpage(BtDb *bt, uid page_no, BtLock mode, BtPage *pageptr)
 		return bt->err;
 	}
 
-	page = (BtPage)(pool->map + (subpage << bt->mgr->page_bits));
+	page = (BtPage)(pool_ptr + (subpage << bt->mgr->page_bits));
 
 	switch (mode) {
 	case BtLockRead:
@@ -822,25 +592,16 @@ BTERR bt_lockpage(BtDb *bt, uid page_no, BtLock mode, BtPage *pageptr)
 
 BTERR bt_unlockpage(BtDb *bt, uid page_no, BtLock mode)
 {
-	BtPool *pool;
+	char *pool_ptr;
 	uint subpage;
 	BtPage page;
 	uint idx;
 
-	//	since page is pinned
-	//	it should still be in the buffer pool
-	//	and is in no danger of being a victim for reuse
-
-	idx = (uint)(page_no >> bt->mgr->seg_bits) % bt->mgr->hashsize;
-	bt_spinreadlock(&bt->mgr->latch[idx]);
-
-	if (!(pool = bt_findpool(bt, page_no, idx)))
+	if (!(pool_ptr = bt_findpool(bt, page_no)))
 		return bt->err = BTERR_hash;
 
-	bt_spinreleaseread(&bt->mgr->latch[idx]);
-
 	subpage = (uint)(page_no & bt->mgr->poolmask); // page within mapping
-	page = (BtPage)(pool->map + (subpage << bt->mgr->page_bits));
+	page = (BtPage)(pool_ptr + (subpage << bt->mgr->page_bits));
 
 	switch (mode) {
 	case BtLockRead:
@@ -861,8 +622,6 @@ BTERR bt_unlockpage(BtDb *bt, uid page_no, BtLock mode)
 	default:
 		return bt->err = BTERR_lock;
 	}
-
-	__sync_fetch_and_add(&pool->pin, -1);
 
 	return bt->err = 0;
 }
@@ -1629,8 +1388,6 @@ BTERR bt_insertkey(BtDb *bt, unsigned char *key, uint len, uid id, uint tod)
 
 		if (bt_splitpage(bt))
 			return bt->err;
-
-
 	}
 
 	bt_addkeytopage(bt, slot, key, len, id, tod);
@@ -1789,7 +1546,7 @@ void *index_file(void *arg)
 			numchars += len;
 			//fprintf(stdout, "key: %s, numchars: %d\n", key, numchars);
 
-			if (bt_insertkey(bt, key, len, line, *tod))
+			if (bt_insertkey(bt, key, (len-1), line, *tod))
 				fprintf(stderr, "Error %d Line: %d\n", bt->err, line), exit(0);
 
 			//fprintf(stdout, "thread: %s, token: %s, len: %d, line: %d\n", args->ctx_string, token, len, line);
@@ -1923,7 +1680,7 @@ int main(int argc, char **argv)
 
 	args = malloc(cnt * sizeof(ThreadArg));
 
-	mgr = bt_mgr((argv[1]), BT_rw, BITS, POOLSIZE, SEGSIZE, POOLSIZE / 8);
+	mgr = bt_mgr((argv[1]), BT_rw, BITS, POOLSIZE, SEGSIZE);
 
 	if (!mgr) {
 		fprintf(stderr, "Index Open Error %s\n", argv[1]);
