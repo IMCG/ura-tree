@@ -156,9 +156,10 @@ typedef struct {
 	volatile ushort evicted;	// last evicted hash table slot
 	ushort poolmax;				// highest page pool node allocated
 	ushort poolmask;			// total size of pages in logical memory pool segment - 1
-	unsigned long long totalwait[MAXTHREADS];
+	//unsigned long long totalwait[MAXTHREADS];
 	unsigned long long lockwait[MAXTHREADS];
-	unsigned long long lockfail[MAXTHREADS];
+	unsigned long long readlockfail[MAXTHREADS];
+	unsigned long long writelockfail[MAXTHREADS];
 } BtMgr;
 
 typedef struct {
@@ -281,13 +282,15 @@ uid bt_getid(unsigned char *src)
 //	wait until write lock mode is clear
 //	and add 1 to the share count
 
-void bt_spinreadlock(BtSpinLatch *latch)
+void bt_spinreadlock(BtSpinLatch *latch, BtDb *bt)
 {
 	ushort prev;
 
 	do {
-		while (__sync_fetch_and_or((ushort *)latch, Mutex) & Mutex)
+		while (__sync_fetch_and_or((ushort *)latch, Mutex) & Mutex) {
+			bt->mgr->readlockfail[bt->thread_id] += 1;
 			sched_yield();
+		}
 		//  see if exclusive request is granted or pending
 
 		if (prev = !(latch->exclusive | latch->pending))
@@ -297,18 +300,22 @@ void bt_spinreadlock(BtSpinLatch *latch)
 
 		if (prev)
 			return;
+
+		bt->mgr->readlockfail[bt->thread_id] += 1;
+
 	} while (sched_yield(), 1);
 
 }
 
 //	wait for other read and write latches to relinquish
 
-void bt_spinwritelock(BtSpinLatch *latch)
+void bt_spinwritelock(BtSpinLatch *latch, BtDb *bt)
 {
 	ushort prev;
 
 	do {
 		while (__sync_fetch_and_or((ushort *)latch, Mutex | Pending) & Mutex) {
+			bt->mgr->writelockfail[bt->thread_id] += 1;
 			sched_yield();
 		}
 
@@ -320,6 +327,7 @@ void bt_spinwritelock(BtSpinLatch *latch)
 		if (prev)
 			return;
 
+		bt->mgr->writelockfail[bt->thread_id] += 1;
 		sched_yield();
 
 	} while (1);
@@ -330,12 +338,14 @@ void bt_spinwritelock(BtSpinLatch *latch)
 //	return 1 if obtained,
 //		0 otherwise
 
-int bt_spinwritetry(BtSpinLatch *latch)
+int bt_spinwritetry(BtSpinLatch *latch, BtDb *bt)
 {
 	ushort prev;
 
-	if (prev = __sync_fetch_and_or((ushort *)latch, Mutex), prev & Mutex)
+	if (prev = __sync_fetch_and_or((ushort *)latch, Mutex), prev & Mutex) {
+		bt->mgr->writelockfail[bt->thread_id] += 1;
 		return 0;
+	}
 
 	//	take write access if all bits are clear
 
@@ -384,7 +394,7 @@ void bt_close(BtDb *bt)
 
 BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize)
 {
-	uint lvl, last;
+	uint lvl, cacheblk, last;
 	BtPage alloc;
 	int offset, i;
 	BtMgr* mgr;
@@ -415,12 +425,17 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize)
 	mgr->mode = mode;
 
 	for (i = 0; i < MAXTHREADS; i++) {
-		mgr->totalwait[i] = 0;
+		//mgr->totalwait[i] = 0;
 		mgr->lockwait[i] = 0;
-		mgr->lockfail[i] = 0;
+		mgr->readlockfail[i] = 0;
+		mgr->writelockfail[i] = 0;
 	}
 
 	//  mask for logical memory pools
+	cacheblk = 4096;
+	if (cacheblk < mgr->page_size)
+		cacheblk = mgr->page_size;
+
 	mgr->poolmask = (cacheblk >> bits) - 1;
 
 	//	see if requested size of pages per pool is greater
@@ -543,16 +558,16 @@ BTERR bt_lockpage(BtDb *bt, uid page_no, BtLock mode, BtPage *pageptr)
 	uint subpage;
 	BtPage page;
 	
-	//unsigned long long startTime, endTime;
+	unsigned long long startTime, endTime;
 	
-	//startTime = preciseTime();
+	startTime = preciseTime();
 
 	//	find pool start
 	if (pool_ptr = bt_findpool(bt, page_no))
 		subpage = (uint)(page_no & bt->mgr->poolmask); // page within mapping
 	else {
-		//endTime = preciseTime();
-		//bt->mgr->lockwait += (endTime - startTime);
+		endTime = preciseTime();
+		bt->mgr->lockwait[bt->thread_id] += (endTime - startTime);
 		return bt->err;
 	}
 
@@ -560,31 +575,31 @@ BTERR bt_lockpage(BtDb *bt, uid page_no, BtLock mode, BtPage *pageptr)
 
 	switch (mode) {
 	case BtLockRead:
-		bt_spinreadlock(page->readwr);
+		bt_spinreadlock(page->readwr, bt);
 		break;
 	case BtLockWrite:
-		bt_spinwritelock(page->readwr);
+		bt_spinwritelock(page->readwr, bt);
 		break;
 	case BtLockAccess:
-		bt_spinreadlock(page->access);
+		bt_spinreadlock(page->access, bt);
 		break;
 	case BtLockDelete:
-		bt_spinwritelock(page->access);
+		bt_spinwritelock(page->access, bt);
 		break;
 	case BtLockParent:
-		bt_spinwritelock(page->parent);
+		bt_spinwritelock(page->parent, bt);
 		break;
 	default:
-		//endTime = preciseTime();
-		//bt->mgr->lockwait += (endTime - startTime);
+		endTime = preciseTime();
+		bt->mgr->lockwait[bt->thread_id] += (endTime - startTime);
 		return bt->err = BTERR_lock;
 	}
 
 	if (pageptr)
 		*pageptr = page;
 
-	//endTime = preciseTime();
-	//bt->mgr->lockwait += (endTime - startTime);
+	endTime = preciseTime();
+	bt->mgr->lockwait[bt->thread_id] += (endTime - startTime);
 	return bt->err = 0;
 }
 
@@ -1709,22 +1724,30 @@ int main(int argc, char **argv)
 	gettimeofday(&stop, NULL);
 	real_time = 1000.0 * (stop.tv_sec - start.tv_sec) + 0.001 * (stop.tv_usec - start.tv_usec);
 	fprintf(stdout, " Time to complete: %.2f seconds\n", real_time / 1000);
+	/*
 	fprintf(stdout, " Total waiting for locks:\n");
 	for (idx = 0; idx < MAXTHREADS; idx++) {
 		if (mgr->totalwait[idx] > 0) {
 			fprintf(stdout, "     Thread %d - %.2f seconds\n", idx, (double)(mgr->totalwait[idx] / getTicksPerNano() / 1000000000));
 		}
 	}
+	*/
 	fprintf(stdout, " Time waiting for locks:\n");
 	for (idx = 0; idx < MAXTHREADS; idx++) {
 		if (mgr->lockwait[idx] > 0) {
 			fprintf(stdout, "     Thread %d - %.2f seconds\n", idx, (double)(mgr->lockwait[idx] / getTicksPerNano() / 1000000000));
 		}
 	}
-	fprintf(stdout, " Number of locks failed:\n");
+	fprintf(stdout, " Number of read locks failed:\n");
 	for (idx = 0; idx < MAXTHREADS; idx++) {
-		if (mgr->lockfail[idx] > 0) {
-			fprintf(stdout, "     Thread %d - %llu attempts\n", idx, mgr->lockfail[idx]);
+		if (mgr->readlockfail[idx] > 0) {
+			fprintf(stdout, "     Thread %d - %llu attempts\n", idx, mgr->readlockfail[idx]);
+		}
+	}
+	fprintf(stdout, " Number of write locks failed:\n");
+	for (idx = 0; idx < MAXTHREADS; idx++) {
+		if (mgr->writelockfail[idx] > 0) {
+			fprintf(stdout, "     Thread %d - %llu attempts\n", idx, mgr->writelockfail[idx]);
 		}
 	}
 
