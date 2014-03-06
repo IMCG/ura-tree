@@ -1,0 +1,719 @@
+/*
+* All tests run on Manta
+*/
+
+// Single Threaded skew case
+// Extra output to indicate that the inserts still work properly without hash table
+>> ./fosterbtreeg_URA asdf w 0 skew1_1
+started indexing for skew1_1
+The file called skew1_1 has been loaded
+finished skew1_1 for 177999203 keys
+Found the key in row: 177728309
+Found the slot: 114
+police
+Printing out page:
+poked
+poker
+pokerfaced
+pokerod
+pokery
+pokes
+pokeweed
+pokey
+pokeying
+pokies
+poking
+pokkuri
+poky
+pol
+polA
+polAl
+polC
+polalization
+poland
+polar
+polarcap
+polarential
+polargraphic
+polargrass
+polari
+polariation
+polarigenic
+polarimeter
+polarimeters
+polarimetric
+polarimetrical
+polarimetrically
+polarimetry
+polaris
+polarisabilities
+polarisability
+polarisable
+polarisation
+polarisations
+polariscope
+polarise
+polarised
+polariser
+polarising
+polarities
+polariton
+polaritons
+polarity
+polarizabilites
+polarizabilities
+polarizabilitiy
+polarizability
+polarizable
+polarizaion
+polarization
+polarizational
+polarizations
+polarizaton
+polarize
+polarized
+polarizer
+polarizers
+polarizes
+polarizing
+polariztion
+polarly
+polarogram
+polarograms
+polarograph
+polarographic
+polarographical
+polarographically
+polarography
+polarogyaphy
+polaroid
+polaron
+polaronic
+polarons
+polars
+polation
+polcal
+polcie
+polciy
+polcrystalline
+polcy
+poldat
+polder
+pole
+poleaxed
+poleaxing
+polecat
+polecats
+poled
+poleface
+polemic
+polemical
+polemically
+polemicist
+polemicizing
+polemics
+polenta
+polepiece
+poles
+polethylene
+poletimber
+poletop
+poletraps
+poleward
+polewards
+poli
+polical
+polically
+policce
+police
+policed
+policeman
+policemen
+policers
+polices
+policesaid
+policewoman
+policewomen
+polichemotherapy
+policial
+policiers
+policies
+policing
+policital
+policlinics
+policmen
+policrystalline
+policrystals
+policty
+policy
+policyclic
+policyholder
+policyholders
+policymaker
+policymakers
+policymaking
+policyowenr
+policyowner
+policyowners
+polidal
+polide
+polidisperse
+polie
+poliester
+poliethylene
+poliical
+poliice
+poliicy
+poliitcal
+poliitical
+polimeric
+polimerization
+polimerized
+polimorphus
+polinate
+polination
+polinator
+poling
+poliniferous
+polinom
+polinomial
+polio
+poliomyelitis
+polionotus
+poliovirtus
+poliovirus
+polioviruses
+poliposis
+polips
+polis
+polish
+polished
+polisher
+polishers
+polishes
+polishing
+polishings
+polishng
+politan
+politbureau
+politburo
+politcal
+politcians
+politcs
+polite
+politely
+politeness
+politetrafluoroethylene
+politial
+politic
+politica
+politicaes
+political
+politicalaction
+politicalization
+politicallly
+politically
+politicals
+politicalthinking
+politican
+politicans
+politiced
+politicee
+politices
+politici
+politicial
+politicials
+politician
+politicians
+politicies
+politicis
+politicisation
+politicism
+politicization
+politicizations
+politicize
+politicized
+politicizes
+politicizing
+politicked
+politicking
+politicl
+politico
+politicos
+politics
+polities
+politik
+politional
+politique
+polititians
+politization
+politropic
+polity
+poliuretaniche
+polivinylchloride
+polized
+polk
+polka
+polkas
+poll
+pollable
+pollack
+pollai
+pollakisuria
+pollakiura
+pollard
+pollarded
+polldat
+polled
+pollees
+pollen
+pollenation
+pollenized
+pollens
+poller
+pollets
+pollinate
+pollinated
+pollinates
+pollinating
+pollination
+pollinaton
+pollinator
+pollinators
+polling
+pollings
+pollinia
+polliwogs
+polllutants
+polllution
+pollo
+pollock
+polloi
+polls
+pollster
+pollsters
+polltaker
+polltants
+polluants
+pollucite
+polluents
+polluntants
+pollusite
+pollutability
+pollutable
+pollutanless
+pollutans
+pollutant
+pollutants
+pollute
+polluted
+polluter
+polluters
+pollutes
+polluting
+pollution
+pollutional
+pollutioncontrol
+pollutionless
+pollutions
+pollutive
+pollutivity
+polluton
+pollutor
+pollux
+pollwatcher
+pollwatchers
+pollworker
+polmer
+polmerase
+polmerized
+polo
+polodial
+poloidal
+poloidally
+poloidals
+polols
+polonides
+polonium
+poloniun
+polority
+poloxalene
+poloyperfluoroalkylethers
+polraizations
+polrarlizing
+polron
+pols
+poltergeist
+poltergeists
+poltical
+poltically
+polticial
+poltician
+poltiical
+poltitical
+polucite
+poluethers
+polugenic
+polular
+polulations
+polunsaturated
+poluprovodnikakh
+polution
+polvalent
+poly
+polyA
+polyADP
+polyC
+polyDMDAAC
+polyForth
+polyabuse
+polyaccharide
+polyacene
+polyacenic
+polyacetal
+polyacethylene
+polyacetylene
+polyacetylenes
+polyacid
+polyacids
+polyacryl
+polyacrylamid
+polyacrylamide
+polyacrylamides
+polyacrylamine
+polyacrylate
+polyacrylated
+polyacrylates
+polyacrylic
+polyacrylimide
+polyacrylnitrile
+polyacrylonitrile
+polyacrylophosphonic
+polyaddiiton
+polyaddition
+polyadenosine
+polyadenylate
+polyadenylated
+polyadenylation
+polyadenylic
+polyadenylylated
+polyadenylylation
+polyadic
+polyalcohol
+polyalkali
+polyalkaline
+polyalkanolamine
+polyalkethers
+polyalklene
+polyalkoxyalkylamine
+polyalkoxylate
+polyalkyl
+polyalkylation
+polyalkylbenzene
+polyalkylbenzenes
+polyalkylene
+polyalkyleneamine
+polyalkylenepolyamines
+polyalkylenimine
+polyalkylenimines
+polyalkylenopolyamines
+polyalkyloxy
+polyalkyloxylated
+polyallenic
+polyallyl
+polyalpha
+polyalphabetic
+polyalphaolefin
+polyalphaolefins
+polyaluminium
+polyaluminum
+polyamantine
+polyamic
+polyamide
+polyamideimide
+polyamides
+polyamine
+polyamines
+polyaminoalkylene
+polyaminocarboxylic
+polyaminopolycarboxylate
+polyaminostyrene
+polyamorphous
+polyampholytes
+polyanaline
+polyanethol
+polyanhydride
+polyanilene
+polyaniline
+polyanilines
+polyanion
+polyanionic
+polyanions
+polyantha
+polyanthracenes
+polyantimonic
+polyaramid
+polyaraylamide
+polyarboxylic
+polyarene
+polyarenes
+polyaromatic
+polyaromatics
+polyarsenazo
+polyarteritis
+polyarthritides
+polyarthritis
+polyarthropathy
+polyarticular
+polyarylate
+polyarylene
+polyarylether
+polyarylphenol
+polyaryltrifluoromethylmethanes
+polyassociated
+polyassociative
+polyatomic
+polyatomics
+polyaxial
+polyaza
+polyazacycloalkane
+polyazulene
+polybag
+polybags
+polybaric
+polybasic
+polybasite
+polybenzimidazole
+polybenzoxazole
+polybenzyl
+polyborates
+polyboride
+polybrene
+polybromide
+polybrominated
+ Time to complete: 258.85 seconds
+ Time waiting for locks:
+     Thread 0 - 61.17 seconds
+ Number of read locks failed:
+ Number of write locks failed:
+
+// Single threaded sorted case
+>> ./fosterbtreeg_URA asdf w 0 sorted1_1
+started indexing for sorted1_1
+The file called sorted1_1 has been loaded
+finished sorted1_1 for 177999203 keys
+ Time to complete: 189.47 seconds
+ Time waiting for locks:
+     Thread 0 - 55.76 seconds
+ Number of read locks failed:
+ Number of write locks failed:
+ 
+// Two threaded skew case
+>> ./fosterbtreeg_URA asdf w 0 skew1_1a skew1_1b
+started indexing for skew1_1a
+started indexing for skew1_1b
+The file called skew1_1b has been loaded
+The file called skew1_1a has been loaded
+finished skew1_1a for 88999601 keys
+finished skew1_1b for 88999602 keys
+ Time to complete: 356.33 seconds
+ Time waiting for locks:
+     Thread 0 - 103.23 seconds
+     Thread 1 - 112.21 seconds
+ Number of read locks failed:
+     Thread 0 - 4089003 attempts
+     Thread 1 - 1264085 attempts
+ Number of write locks failed:
+     Thread 0 - 879302 attempts
+     Thread 1 - 394346 attempts
+
+// Two threaded sorted case
+>> ./fosterbtreeg_URA asdf w 0 sorted1_1a sorted1_1b
+started indexing for sorted1_1a
+started indexing for sorted1_1b
+The file called sorted1_1b has been loaded
+The file called sorted1_1a has been loaded
+finished sorted1_1a for 88999601 keys
+finished sorted1_1b for 88999602 keys
+ Time to complete: 337.28 seconds
+ Time waiting for locks:
+     Thread 0 - 125.48 seconds
+     Thread 1 - 127.42 seconds
+ Number of read locks failed:
+     Thread 0 - 2519702 attempts
+     Thread 1 - 679950 attempts
+ Number of write locks failed:
+     Thread 0 - 7162914 attempts
+     Thread 1 - 3778287 attempts
+
+// Four threaded skew case
+>> ./fosterbtreeg_URA asdf w 0 skew1_1aa skew1_1ab skew1_1ba skew1_1bb
+started indexing for skew1_1aa
+started indexing for skew1_1ba
+started indexing for skew1_1bb
+started indexing for skew1_1ab
+The file called skew1_1ba has been loaded
+The file called skew1_1aa has been loaded
+The file called skew1_1bb has been loaded
+The file called skew1_1ab has been loaded
+finished skew1_1ab for 44499801 keys
+finished skew1_1ba for 44499801 keys
+finished skew1_1bb for 44499801 keys
+finished skew1_1aa for 44499800 keys
+ Time to complete: 381.34 seconds
+ Time waiting for locks:
+     Thread 0 - 123.11 seconds
+     Thread 1 - 109.54 seconds
+     Thread 2 - 120.95 seconds
+     Thread 3 - 135.67 seconds
+ Number of read locks failed:
+     Thread 0 - 2287395 attempts
+     Thread 1 - 3423486 attempts
+     Thread 2 - 2658661 attempts
+     Thread 3 - 2494864 attempts
+ Number of write locks failed:
+     Thread 0 - 668628 attempts
+     Thread 1 - 797716 attempts
+     Thread 2 - 729234 attempts
+     Thread 3 - 633928 attempts
+
+// Two threaded sorted case
+>> ./fosterbtreeg_URA asdf w 0 sorted1_1aa sorted1_1ab sorted1_1ba sorted1_1bb
+started indexing for sorted1_1aa
+started indexing for sorted1_1ab
+started indexing for sorted1_1ba
+started indexing for sorted1_1bb
+The file called sorted1_1ab has been loaded
+The file called sorted1_1aa has been loaded
+The file called sorted1_1ba has been loaded
+The file called sorted1_1bb has been loaded
+finished sorted1_1ba for 44499801 keys
+finished sorted1_1ab for 44499801 keys
+finished sorted1_1aa for 44499800 keys
+finished sorted1_1bb for 44499801 keys
+ Time to complete: 351.82 seconds
+ Time waiting for locks:
+     Thread 0 - 135.22 seconds
+     Thread 1 - 146.95 seconds
+     Thread 2 - 120.64 seconds
+     Thread 3 - 135.09 seconds
+ Number of read locks failed:
+     Thread 0 - 2464078 attempts
+     Thread 1 - 2575771 attempts
+     Thread 2 - 2886531 attempts
+     Thread 3 - 2318834 attempts
+ Number of write locks failed:
+     Thread 0 - 23695982 attempts
+     Thread 1 - 23124986 attempts
+     Thread 2 - 25094809 attempts
+     Thread 3 - 24201936 attempts
+
+// Eight threaded skew case
+>> ./fosterbtreeg_URA asdf w 0 skew1_1aaa skew1_1aab skew1_1aba skew1_1abb skew1_1baa skew1_1bab skew1_1bba skew1_1bbb	 
+started indexing for skew1_1aba
+started indexing for skew1_1abb
+started indexing for skew1_1aaa
+started indexing for skew1_1aab
+started indexing for skew1_1baa
+started indexing for skew1_1bab
+started indexing for skew1_1bba
+started indexing for skew1_1bbb
+The file called skew1_1aab has been loaded
+The file called skew1_1bab has been loaded
+The file called skew1_1aaa has been loaded
+The file called skew1_1bba has been loaded
+The file called skew1_1baa has been loaded
+The file called skew1_1bbb has been loaded
+The file called skew1_1abb has been loaded
+The file called skew1_1aba has been loaded
+finished skew1_1bba for 22249900 keys
+finished skew1_1aab for 22249900 keys
+finished skew1_1aaa for 22249900 keys
+finished skew1_1bbb for 22249901 keys
+finished skew1_1bab for 22249901 keys
+finished skew1_1baa for 22249900 keys
+finished skew1_1abb for 22249901 keys
+finished skew1_1aba for 22249900 keys
+ Time to complete: 371.86 seconds
+ Time waiting for locks:
+     Thread 0 - 143.02 seconds
+     Thread 1 - 142.69 seconds
+     Thread 2 - 154.93 seconds
+     Thread 3 - 147.20 seconds
+     Thread 4 - 146.94 seconds
+     Thread 5 - 152.86 seconds
+     Thread 6 - 159.71 seconds
+     Thread 7 - 164.19 seconds
+ Number of read locks failed:
+     Thread 0 - 4268603 attempts
+     Thread 1 - 3939760 attempts
+     Thread 2 - 4666320 attempts
+     Thread 3 - 4532300 attempts
+     Thread 4 - 4593545 attempts
+     Thread 5 - 4657505 attempts
+     Thread 6 - 4628485 attempts
+     Thread 7 - 4117895 attempts
+ Number of write locks failed:
+     Thread 0 - 1682937 attempts
+     Thread 1 - 1690280 attempts
+     Thread 2 - 1822506 attempts
+     Thread 3 - 1619658 attempts
+     Thread 4 - 1576990 attempts
+     Thread 5 - 1632739 attempts
+     Thread 6 - 1856518 attempts
+     Thread 7 - 1770352 attempts
+	 
+// Two threaded sorted case
+>> ./fosterbtreeg_URA asdf w 0 sorted1_1aaa sorted1_1aab sorted1_1aba sorted1_1abb sorted1_1baa sorted1_1bab sorted1_1bba sorted1_1bbb
+started indexing for sorted1_1aba
+started indexing for sorted1_1abb
+started indexing for sorted1_1bab
+started indexing for sorted1_1bba
+started indexing for sorted1_1aab
+started indexing for sorted1_1aaa
+started indexing for sorted1_1baa
+started indexing for sorted1_1bbb
+The file called sorted1_1aaa has been loaded
+The file called sorted1_1bab has been loaded
+The file called sorted1_1aab has been loaded
+The file called sorted1_1bbb has been loaded
+The file called sorted1_1bba has been loaded
+The file called sorted1_1baa has been loaded
+The file called sorted1_1abb has been loaded
+The file called sorted1_1aba has been loaded
+finished sorted1_1bbb for 22249901 keys
+finished sorted1_1bba for 22249900 keys
+finished sorted1_1bab for 22249901 keys
+finished sorted1_1aaa for 22249900 keys
+finished sorted1_1aba for 22249900 keys
+finished sorted1_1baa for 22249900 keys
+finished sorted1_1abb for 22249901 keys
+finished sorted1_1aab for 22249900 keys
+ Time to complete: 361.19 seconds
+ Time waiting for locks:
+     Thread 0 - 158.50 seconds
+     Thread 1 - 163.07 seconds
+     Thread 2 - 158.85 seconds
+     Thread 3 - 162.37 seconds
+     Thread 4 - 166.12 seconds
+     Thread 5 - 155.47 seconds
+     Thread 6 - 149.18 seconds
+     Thread 7 - 123.75 seconds
+ Number of read locks failed:
+     Thread 0 - 3660583 attempts
+     Thread 1 - 3428052 attempts
+     Thread 2 - 4595633 attempts
+     Thread 3 - 3553866 attempts
+     Thread 4 - 3948585 attempts
+     Thread 5 - 3794025 attempts
+     Thread 6 - 4472222 attempts
+     Thread 7 - 3783373 attempts
+ Number of write locks failed:
+     Thread 0 - 19946146 attempts
+     Thread 1 - 19679606 attempts
+     Thread 2 - 17113223 attempts
+     Thread 3 - 18847920 attempts
+     Thread 4 - 21194698 attempts
+     Thread 5 - 17390855 attempts
+     Thread 6 - 13200673 attempts
+     Thread 7 - 10978025 attempts

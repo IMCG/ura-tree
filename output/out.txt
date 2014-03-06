@@ -1,14 +1,52 @@
-started indexing for sorted1_1aa
-started indexing for sorted1_1ab
-started indexing for sorted1_1ba
-started indexing for sorted1_1bb
-The file called sorted1_1ab has been loaded
-The file called sorted1_1aa has been loaded
-The file called sorted1_1bb has been loaded
-The file called sorted1_1ba has been loaded
-finished sorted1_1ba for 44499801 keys
-finished sorted1_1ab for 44499801 keys
-finished sorted1_1bb for 44499801 keys
-finished sorted1_1aa for 44499800 keys
- Time to complete: 949.36 seconds
- Time waiting for locks 1633.85 seconds
+started indexing for sorted1_1aba
+started indexing for sorted1_1abb
+started indexing for sorted1_1bab
+started indexing for sorted1_1bba
+started indexing for sorted1_1aab
+started indexing for sorted1_1aaa
+started indexing for sorted1_1baa
+started indexing for sorted1_1bbb
+The file called sorted1_1aaa has been loaded
+The file called sorted1_1bab has been loaded
+The file called sorted1_1aab has been loaded
+The file called sorted1_1bbb has been loaded
+The file called sorted1_1bba has been loaded
+The file called sorted1_1baa has been loaded
+The file called sorted1_1abb has been loaded
+The file called sorted1_1aba has been loaded
+finished sorted1_1bbb for 22249901 keys
+finished sorted1_1bba for 22249900 keys
+finished sorted1_1bab for 22249901 keys
+finished sorted1_1aaa for 22249900 keys
+finished sorted1_1aba for 22249900 keys
+finished sorted1_1baa for 22249900 keys
+finished sorted1_1abb for 22249901 keys
+finished sorted1_1aab for 22249900 keys
+ Time to complete: 361.19 seconds
+ Time waiting for locks:
+     Thread 0 - 158.50 seconds
+     Thread 1 - 163.07 seconds
+     Thread 2 - 158.85 seconds
+     Thread 3 - 162.37 seconds
+     Thread 4 - 166.12 seconds
+     Thread 5 - 155.47 seconds
+     Thread 6 - 149.18 seconds
+     Thread 7 - 123.75 seconds
+ Number of read locks failed:
+     Thread 0 - 3660583 attempts
+     Thread 1 - 3428052 attempts
+     Thread 2 - 4595633 attempts
+     Thread 3 - 3553866 attempts
+     Thread 4 - 3948585 attempts
+     Thread 5 - 3794025 attempts
+     Thread 6 - 4472222 attempts
+     Thread 7 - 3783373 attempts
+ Number of write locks failed:
+     Thread 0 - 19946146 attempts
+     Thread 1 - 19679606 attempts
+     Thread 2 - 17113223 attempts
+     Thread 3 - 18847920 attempts
+     Thread 4 - 21194698 attempts
+     Thread 5 - 17390855 attempts
+     Thread 6 - 13200673 attempts
+     Thread 7 - 10978025 attempts
