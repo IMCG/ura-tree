@@ -156,8 +156,12 @@ typedef struct {
 	volatile ushort evicted;	// last evicted hash table slot
 	ushort poolmax;				// highest page pool node allocated
 	ushort poolmask;			// total size of pages in logical memory pool segment - 1
-	//unsigned long long totalwait[MAXTHREADS];
-	unsigned long long lockwait[MAXTHREADS];
+
+	// Tracking Data
+	unsigned long long readlockwait[MAXTHREADS];
+	unsigned long long writelockwait[MAXTHREADS];
+	unsigned long long readlockaquired[MAXTHREADS];
+	unsigned long long writelockaquired[MAXTHREADS];
 	unsigned long long readlockfail[MAXTHREADS];
 	unsigned long long writelockfail[MAXTHREADS];
 } BtMgr;
@@ -425,8 +429,10 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize)
 	mgr->mode = mode;
 
 	for (i = 0; i < MAXTHREADS; i++) {
-		//mgr->totalwait[i] = 0;
-		mgr->lockwait[i] = 0;
+		mgr->readlockwait[i] = 0;
+		mgr->writelockwait[i] = 0;
+		mgr->readlockaquired[i] = 0;
+		mgr->writelockaquired[i] = 0;
 		mgr->readlockfail[i] = 0;
 		mgr->writelockfail[i] = 0;
 	}
@@ -567,7 +573,14 @@ BTERR bt_lockpage(BtDb *bt, uid page_no, BtLock mode, BtPage *pageptr)
 		subpage = (uint)(page_no & bt->mgr->poolmask); // page within mapping
 	else {
 		endTime = preciseTime();
-		bt->mgr->lockwait[bt->thread_id] += (endTime - startTime);
+		if (mode == BtLockRead || mode == BtLockAccess) {
+			bt->mgr->readlockwait[bt->thread_id] += (endTime - startTime);
+			bt->mgr->readlockfail[bt->thread_id] = bt->mgr->readlockfail[bt->thread_id] + 1;
+		}
+		else if (mode == BtLockWrite || mode == BtLockDelete || mode == BtLockParent) {
+			bt->mgr->writelockwait[bt->thread_id] += (endTime - startTime);
+			bt->mgr->writelockfail[bt->thread_id] = bt->mgr->writelockfail[bt->thread_id] + 1;
+		}
 		return bt->err;
 	}
 
@@ -590,8 +603,6 @@ BTERR bt_lockpage(BtDb *bt, uid page_no, BtLock mode, BtPage *pageptr)
 		bt_spinwritelock(page->parent, bt);
 		break;
 	default:
-		endTime = preciseTime();
-		bt->mgr->lockwait[bt->thread_id] += (endTime - startTime);
 		return bt->err = BTERR_lock;
 	}
 
@@ -599,7 +610,14 @@ BTERR bt_lockpage(BtDb *bt, uid page_no, BtLock mode, BtPage *pageptr)
 		*pageptr = page;
 
 	endTime = preciseTime();
-	bt->mgr->lockwait[bt->thread_id] += (endTime - startTime);
+	if (mode == BtLockRead || mode == BtLockAccess) {
+		bt->mgr->readlockwait[bt->thread_id] += (endTime - startTime);
+		bt->mgr->readlockaquired[bt->thread_id] = bt->mgr->readlockaquired[bt->thread_id] + 1;
+	}
+	else if (mode == BtLockWrite || mode == BtLockDelete || mode == BtLockParent) {
+		bt->mgr->writelockwait[bt->thread_id] += (endTime - startTime);
+		bt->mgr->writelockaquired[bt->thread_id] = bt->mgr->writelockaquired[bt->thread_id] + 1;
+	}
 	return bt->err = 0;
 }
 
@@ -1724,31 +1742,35 @@ int main(int argc, char **argv)
 	gettimeofday(&stop, NULL);
 	real_time = 1000.0 * (stop.tv_sec - start.tv_sec) + 0.001 * (stop.tv_usec - start.tv_usec);
 	fprintf(stdout, " Time to complete: %.2f seconds\n", real_time / 1000);
-	/*
-	fprintf(stdout, " Total waiting for locks:\n");
-	for (idx = 0; idx < MAXTHREADS; idx++) {
-		if (mgr->totalwait[idx] > 0) {
-			fprintf(stdout, "     Thread %d - %.2f seconds\n", idx, (double)(mgr->totalwait[idx] / getTicksPerNano() / 1000000000));
-		}
+	fprintf(stdout, " Time waiting for read locks:\n");
+	for (idx = 0; idx < cnt; idx++) {
+		fprintf(stdout, "     Thread %d - %.2f seconds\n", idx, (double)(mgr->readlockwait[idx] / getTicksPerNano() / 1000000000));
 	}
-	*/
-	fprintf(stdout, " Time waiting for locks:\n");
-	for (idx = 0; idx < MAXTHREADS; idx++) {
-		if (mgr->lockwait[idx] > 0) {
-			fprintf(stdout, "     Thread %d - %.2f seconds\n", idx, (double)(mgr->lockwait[idx] / getTicksPerNano() / 1000000000));
-		}
+	fprintf(stdout, " Time waiting for write locks:\n");
+	for (idx = 0; idx < cnt; idx++) {
+		fprintf(stdout, "     Thread %d - %.2f seconds\n", idx, (double)(mgr->writelockwait[idx] / getTicksPerNano() / 1000000000));
+	}
+	fprintf(stdout, " Number of read locks aquired:\n");
+	for (idx = 0; idx < cnt; idx++) {
+		fprintf(stdout, "     Thread %d - %llu aquired\n", idx, mgr->readlockaquired[idx]);
+	}
+	fprintf(stdout, " Number of write locks aquired:\n");
+	for (idx = 0; idx < cnt; idx++) {
+		fprintf(stdout, "     Thread %d - %llu aquired\n", idx, mgr->writelockaquired[idx]);
 	}
 	fprintf(stdout, " Number of read locks failed:\n");
-	for (idx = 0; idx < MAXTHREADS; idx++) {
-		if (mgr->readlockfail[idx] > 0) {
-			fprintf(stdout, "     Thread %d - %llu attempts\n", idx, mgr->readlockfail[idx]);
-		}
+	for (idx = 0; idx < cnt; idx++) {
+		fprintf(stdout, "     Thread %d - %llu attempts\n", idx, mgr->readlockfail[idx]);
 	}
 	fprintf(stdout, " Number of write locks failed:\n");
-	for (idx = 0; idx < MAXTHREADS; idx++) {
-		if (mgr->writelockfail[idx] > 0) {
-			fprintf(stdout, "     Thread %d - %llu attempts\n", idx, mgr->writelockfail[idx]);
-		}
+	for (idx = 0; idx < cnt; idx++) {
+		fprintf(stdout, "     Thread %d - %llu attempts\n", idx, mgr->writelockfail[idx]);
+	}
+	fprintf(stdout, "\n CSV Lines: \n");
+	fprintf(stdout, "Threads,Execution,Thread_Id,Read_Lock_Wait,Write_Lock_Wait,Read_Lock_Aquired,Write_Lock_Aquired,Read_Lock_Failed,Write_Lock_Failed\n");
+	for (idx = 0; idx < cnt; idx++) {
+		fprintf(stdout, "%d,%.2f,%d,%.2f,%.2f,%llu,%llu,%llu,%llu\n", cnt, (real_time / 1000), idx, (double)(mgr->readlockwait[idx] / getTicksPerNano()),
+			(double)(mgr->writelockwait[idx] / getTicksPerNano()), mgr->readlockaquired[idx], mgr->writelockaquired[idx], mgr->readlockfail[idx], mgr->writelockfail[idx]);
 	}
 
 	bt_mgrclose(mgr);

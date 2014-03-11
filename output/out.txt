@@ -1,15 +1,15 @@
-started indexing for sorted1_1aba
-started indexing for sorted1_1abb
-started indexing for sorted1_1bab
+started indexing for sorted1_1aaa
 started indexing for sorted1_1bba
 started indexing for sorted1_1aab
-started indexing for sorted1_1aaa
+started indexing for sorted1_1aba
 started indexing for sorted1_1baa
+started indexing for sorted1_1abb
+started indexing for sorted1_1bab
 started indexing for sorted1_1bbb
+The file called sorted1_1bbb has been loaded
 The file called sorted1_1aaa has been loaded
 The file called sorted1_1bab has been loaded
 The file called sorted1_1aab has been loaded
-The file called sorted1_1bbb has been loaded
 The file called sorted1_1bba has been loaded
 The file called sorted1_1baa has been loaded
 The file called sorted1_1abb has been loaded
@@ -17,36 +17,74 @@ The file called sorted1_1aba has been loaded
 finished sorted1_1bbb for 22249901 keys
 finished sorted1_1bba for 22249900 keys
 finished sorted1_1bab for 22249901 keys
+finished sorted1_1aab for 22249900 keys
 finished sorted1_1aaa for 22249900 keys
+finished sorted1_1abb for 22249901 keys
 finished sorted1_1aba for 22249900 keys
 finished sorted1_1baa for 22249900 keys
-finished sorted1_1abb for 22249901 keys
-finished sorted1_1aab for 22249900 keys
- Time to complete: 361.19 seconds
- Time waiting for locks:
-     Thread 0 - 158.50 seconds
-     Thread 1 - 163.07 seconds
-     Thread 2 - 158.85 seconds
-     Thread 3 - 162.37 seconds
-     Thread 4 - 166.12 seconds
-     Thread 5 - 155.47 seconds
-     Thread 6 - 149.18 seconds
-     Thread 7 - 123.75 seconds
+ Time to complete: 353.95 seconds
+ Time waiting for read locks:
+     Thread 0 - 111.51 seconds
+     Thread 1 - 113.18 seconds
+     Thread 2 - 111.96 seconds
+     Thread 3 - 111.92 seconds
+     Thread 4 - 113.97 seconds
+     Thread 5 - 104.40 seconds
+     Thread 6 - 111.86 seconds
+     Thread 7 - 60.31 seconds
+ Time waiting for write locks:
+     Thread 0 - 51.70 seconds
+     Thread 1 - 48.72 seconds
+     Thread 2 - 52.05 seconds
+     Thread 3 - 52.01 seconds
+     Thread 4 - 51.93 seconds
+     Thread 5 - 46.47 seconds
+     Thread 6 - 47.11 seconds
+     Thread 7 - 26.33 seconds
+ Number of read locks aquired:
+     Thread 0 - 76974006 aquired
+     Thread 1 - 75115856 aquired
+     Thread 2 - 77660099 aquired
+     Thread 3 - 76331729 aquired
+     Thread 4 - 76965980 aquired
+     Thread 5 - 76367412 aquired
+     Thread 6 - 75816876 aquired
+     Thread 7 - 56145921 aquired
+ Number of write locks aquired:
+     Thread 0 - 22250632 aquired
+     Thread 1 - 22251418 aquired
+     Thread 2 - 22250952 aquired
+     Thread 3 - 22250586 aquired
+     Thread 4 - 22250292 aquired
+     Thread 5 - 22250544 aquired
+     Thread 6 - 22250403 aquired
+     Thread 7 - 22252851 aquired
  Number of read locks failed:
-     Thread 0 - 3660583 attempts
-     Thread 1 - 3428052 attempts
-     Thread 2 - 4595633 attempts
-     Thread 3 - 3553866 attempts
-     Thread 4 - 3948585 attempts
-     Thread 5 - 3794025 attempts
-     Thread 6 - 4472222 attempts
-     Thread 7 - 3783373 attempts
+     Thread 0 - 5472716 attempts
+     Thread 1 - 6697205 attempts
+     Thread 2 - 6202359 attempts
+     Thread 3 - 6572689 attempts
+     Thread 4 - 5406268 attempts
+     Thread 5 - 7152862 attempts
+     Thread 6 - 7017564 attempts
+     Thread 7 - 5259696 attempts
  Number of write locks failed:
-     Thread 0 - 19946146 attempts
-     Thread 1 - 19679606 attempts
-     Thread 2 - 17113223 attempts
-     Thread 3 - 18847920 attempts
-     Thread 4 - 21194698 attempts
-     Thread 5 - 17390855 attempts
-     Thread 6 - 13200673 attempts
-     Thread 7 - 10978025 attempts
+     Thread 0 - 16522850 attempts
+     Thread 1 - 15476655 attempts
+     Thread 2 - 15977101 attempts
+     Thread 3 - 15860173 attempts
+     Thread 4 - 16307164 attempts
+     Thread 5 - 15727705 attempts
+     Thread 6 - 14456991 attempts
+     Thread 7 - 6659711 attempts
+
+ CSV Lines: 
+Threads,Execution,Thread_Id,Read_Lock_Wait,Write_Lock_Wait,Read_Lock_Aquired,Write_Lock_Aquired,Read_Lock_Failed,Write_Lock_Failed
+8,353.95,0,111510249472.00,51703025664.00,76974006,22250632,5472716,16522850
+8,353.95,1,113176567808.00,48718774272.00,75115856,22251418,6697205,15476655
+8,353.95,2,111961366528.00,52054032384.00,77660099,22250952,6202359,15977101
+8,353.95,3,111918899200.00,52006268928.00,76331729,22250586,6572689,15860173
+8,353.95,4,113972740096.00,51933450240.00,76965980,22250292,5406268,16307164
+8,353.95,5,104403787776.00,46469140480.00,76367412,22250544,7152862,15727705
+8,353.95,6,111859900416.00,47107543040.00,75816876,22250403,7017564,14456991
+8,353.95,7,60314947584.00,26331303936.00,56145921,22252851,5259696,6659711
