@@ -462,6 +462,7 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize)
 	memset(alloc, 0, 1 << bits);
 	alloc->bits = mgr->page_bits;
 
+	// FIXME: Starting here, add initial upper fence key to b-tree
 	for (lvl = MIN_lvl; lvl--;) {
 		slotptr(alloc, 1)->off = mgr->page_size - 3;
 		bt_putid(slotptr(alloc, 1)->id, lvl ? MIN_lvl - lvl + 1 : 0);		// next(lower) page number
@@ -882,6 +883,7 @@ int bt_loadpage(BtDb *bt, unsigned char *key, uint len, uint lvl, uint lock)
 //  find and delete key on page by marking delete flag bit
 //  when page becomes empty, delete it from the btree
 
+// FIXME: Ignoring deletions for now
 BTERR bt_deletekey(BtDb *bt, unsigned char *key, uint len, uint lvl)
 {
 	unsigned char leftkey[256], rightkey[256];
@@ -1041,6 +1043,7 @@ uint bt_cleanpage(BtDb *bt, uint amt)
 
 	// try cleaning up page first
 
+	// FIXME: Make sure other fence key remains in list
 	while (cnt++ < max) {
 		// always leave fence key and foster children in list
 		if (cnt < max - page->foster && slotptr(bt->frame, cnt)->dead)
@@ -1111,6 +1114,7 @@ void bt_addkeytopage(BtDb *bt, uint slot, unsigned char *key, uint len, uid id, 
 
 BTERR bt_splitroot(BtDb *bt, uid right)
 {
+	// FIXME: Need variables for leftfence and rightfence
 	uint nxt = bt->mgr->page_size;
 	unsigned char fencekey[256];
 	BtPage root = bt->page;
@@ -1130,6 +1134,8 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 	key = keyptr(root, root->cnt);
 	memcpy(fencekey, key, key->len + 1);
 
+	// FIXME: Save right fence key
+
 	//  copy the lower keys into a new left page
 
 	if (!(new_page = bt_newpage(bt, root)))
@@ -1137,6 +1143,7 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 
 	// preserve the page info at the bottom
 	// and set rest of the root to zero
+	// FIXME: Also preserve right fence key
 
 	memset(root + 1, 0, bt->mgr->page_size - sizeof(*root));
 
@@ -1175,6 +1182,7 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 
 BTERR bt_splitpage(BtDb *bt)
 {
+	// FIXME: Include left and right fence keys
 	uint slot, cnt, idx, max, nxt = bt->mgr->page_size;
 	unsigned char fencekey[256];
 	uid page_no = bt->page_no;
