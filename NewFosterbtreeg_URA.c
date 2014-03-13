@@ -226,6 +226,21 @@ extern uint bt_tod(BtDb *bt, uint slot);
 //  is allocated from the top.  When the two
 //  areas meet, the page is split into two.
 
+// CURRENT PAGE STRUCTURE EXAMPLE
+//
+// Ordered:
+//-----------------------------------------------------------------------------------------------------------------------------------------------------------
+//| BtPage Struct | Slot A | Slot B | Slot C | Fence Slot | Foster A | Foster B |             | FosterKey B | FosterKey A | FenceKey | Key C | Key B | Key A |
+//| foster=2      | dead=0 | dead=1 | dead=0 |            |          |          |.............|             |             |          |       |       |       |
+//| cnt=6, act=5  |        |        |        |            |          |          |             |             |             |          |       |       |       |
+//------------------------------------------------------------------------------------------------------------------------------------------------------------
+// 0                                                                                         min                                                         page_size
+//
+// When adding keys, keys are allocated backwards from min and slots are allocated in order without overwriting fence slot or foster slots
+// Offset member in slot points to appropriate key
+// TODO: Add left fence key 
+//
+
 //  A key consists of a length byte, two bytes of
 //  index number (0 - 65534), and up to 253 bytes
 //  of key value.  Duplicate keys are discarded.
