@@ -33,6 +33,7 @@ REDISTRIBUTION OF THIS SOFTWARE.
 #define MAXTHREADS 32
 
 #define _GNU_SOURCE
+//#define LOWFENCE
 
 #include <unistd.h>
 #include <stdio.h>
@@ -238,7 +239,14 @@ extern uint bt_tod(BtDb *bt, uint slot);
 //
 // When adding keys, keys are allocated backwards from min and slots are allocated in order without overwriting fence slot or foster slots
 // Offset member in slot points to appropriate key
-// TODO: Add left fence key 
+// 
+// DESIRED STRUCTURE:
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+//| BtPage Struct | Low Fence | Slot A | Slot B | Slot C | High Fence | Foster A | Foster B |             | FosterKey B | FosterKey A | HighFenceKey | Key C | Key B | Key A | LowFenceKey |
+//| foster=2      |	Slot      | dead=0 | dead=1 | dead=0 | Slot       |          |          |.............|             |             |              |       |       |       |             |
+//| cnt=7, act=6  |           |        |        |        |            |          |          |             |             |             |              |       |       |       |             |
+//------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+// 0                                                                                                      min                                                                         page_size
 //
 
 //  A key consists of a length byte, two bytes of
@@ -477,8 +485,27 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize)
 	memset(alloc, 0, 1 << bits);
 	alloc->bits = mgr->page_bits;
 
-	// FIXME: Starting here, add initial upper fence key to b-tree
 	for (lvl = MIN_lvl; lvl--;) {
+#ifdef LOWFENCE
+		slotptr(alloc, 1)->off = mgr->page_size - 3;
+		bt_putid(slotptr(alloc, 1)->id, lvl ? (MIN_lvl - lvl + 1) * 2 : 0);		// next(lower) page number
+		key = keyptr(alloc, 1);
+		key->len = 2;			// create starter key
+		key->key[0] = 0x00;
+		key->key[1] = 0x00;
+
+		slotptr(alloc, 2)->off = mgr->page_size - 6;
+		bt_putid(slotptr(alloc, 2)->id, lvl ? (MIN_lvl - lvl + 1) * 2 + 1 : 1);		// next(lower) page number
+		key = keyptr(alloc, 2);
+		key->len = 2;			// create stopper key
+		key->key[0] = 0xff;
+		key->key[1] = 0xff;
+
+		alloc->min = mgr->page_size - 6;
+		alloc->lvl = lvl;
+		alloc->cnt = 2;
+		alloc->act = 2;
+#else
 		slotptr(alloc, 1)->off = mgr->page_size - 3;
 		bt_putid(slotptr(alloc, 1)->id, lvl ? MIN_lvl - lvl + 1 : 0);		// next(lower) page number
 		key = keyptr(alloc, 1);
@@ -489,6 +516,7 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize)
 		alloc->lvl = lvl;
 		alloc->cnt = 1;
 		alloc->act = 1;
+#endif
 
 
 		memcpy((mgr->buffer + offset), alloc, mgr->page_size);
@@ -796,6 +824,7 @@ int bt_findslot(BtDb *bt, unsigned char *key, uint len)
 //  find and load page at given level for given key
 //	leave page rd or wr locked as requested
 
+// FIXME: Don't return fence slot
 int bt_loadpage(BtDb *bt, unsigned char *key, uint len, uint lvl, uint lock)
 {
 	uid page_no = ROOT_page, prevpage = 0;
@@ -1058,11 +1087,15 @@ uint bt_cleanpage(BtDb *bt, uint amt)
 
 	// try cleaning up page first
 
-	// FIXME: Make sure other fence key remains in list
 	while (cnt++ < max) {
-		// always leave fence key and foster children in list
+		// always leave fence keys and foster children in list
+#ifdef LOWFENCE
+		if (((cnt < max - page->foster) || cnt == 1) && slotptr(bt->frame, cnt)->dead)
+			continue;
+#else
 		if (cnt < max - page->foster && slotptr(bt->frame, cnt)->dead)
 			continue;
+#endif
 
 		// copy key
 		key = keyptr(bt->frame, cnt);
@@ -1107,7 +1140,7 @@ void bt_addkeytopage(BtDb *bt, uint slot, unsigned char *key, uint len, uid id, 
 		break;
 
 	// now insert key into array before slot
-	// preserving the fence slot
+	// preserving the fence slots
 
 	if (idx == page->cnt)
 		idx++, page->cnt++;
@@ -1129,9 +1162,12 @@ void bt_addkeytopage(BtDb *bt, uint slot, unsigned char *key, uint len, uid id, 
 
 BTERR bt_splitroot(BtDb *bt, uid right)
 {
-	// FIXME: Need variables for leftfence and rightfence
 	uint nxt = bt->mgr->page_size;
+#ifdef LOWFENCE
+	unsigned char lowfencekey[256], highfencekey[256];
+#else
 	unsigned char fencekey[256];
+#endif
 	BtPage root = bt->page;
 	uid new_page;
 	BtKey key;
@@ -1197,9 +1233,12 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 
 BTERR bt_splitpage(BtDb *bt)
 {
-	// FIXME: Include left and right fence keys
 	uint slot, cnt, idx, max, nxt = bt->mgr->page_size;
+#ifdef LOWFENCE
+	unsigned char lowfencekey[256], highfencekey[256];
+#else
 	unsigned char fencekey[256];
+#endif
 	uid page_no = bt->page_no;
 	BtPage page = bt->page;
 	uint tod = time(NULL);
