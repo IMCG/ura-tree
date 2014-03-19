@@ -87,8 +87,8 @@ typedef enum{
 //	the tod field from the key.
 
 //	Keys are marked dead, but remain on the page until
-//	it cleanup is called. The fence key (highest key) for
-//	the page is always present, even after cleanup.
+//	it cleanup is called. The fence keys (lowest and highest keys) for
+//	the page are always present, even after cleanup.
 
 typedef struct {
 	uint off : BT_maxbits;		// page offset for key start
@@ -1181,11 +1181,16 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 	root->foster--;
 
 	//	Save left fence key.
+#ifdef LOWFENCE
+	key = keyptr(root, 1);
+	memcpy(lowfencekey, key, key->len + 1);
 
 	key = keyptr(root, root->cnt);
+	memcpy(highfencekey, key, key->len + 1);
+#else
+	key = keyptr(root, root->cnt);
 	memcpy(fencekey, key, key->len + 1);
-
-	// FIXME: Save right fence key
+#endif
 
 	//  copy the lower keys into a new left page
 
@@ -1194,20 +1199,35 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 
 	// preserve the page info at the bottom
 	// and set rest of the root to zero
-	// FIXME: Also preserve right fence key
 
 	memset(root + 1, 0, bt->mgr->page_size - sizeof(*root));
 
 	// insert left fence key on empty newroot page
 
+#ifdef LOWFENCE
+	nxt -= *highfencekey + 1;
+	memcpy((unsigned char *)root + nxt, highfencekey, *highfencekey + 1);
+	bt_putid(slotptr(root, 1)->id, new_page);
+	slotptr(root, 1)->off = nxt;
+#else
 	nxt -= *fencekey + 1;
 	memcpy((unsigned char *)root + nxt, fencekey, *fencekey + 1);
 	bt_putid(slotptr(root, 1)->id, new_page);
 	slotptr(root, 1)->off = nxt;
+#endif
 
 	// insert stopper key on newroot page
 	// and increase the root height
 
+#ifdef LOWFENCE
+	nxt -= 3;
+	highfencekey[0] = 2;
+	highfencekey[1] = 0xff;
+	highfencekey[2] = 0xff;
+	memcpy((unsigned char *)root + nxt, highfencekey, *highfencekey + 1);
+	bt_putid(slotptr(root, 2)->id, right);
+	slotptr(root, 2)->off = nxt;
+#else
 	nxt -= 3;
 	fencekey[0] = 2;
 	fencekey[1] = 0xff;
@@ -1215,6 +1235,7 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 	memcpy((unsigned char *)root + nxt, fencekey, *fencekey + 1);
 	bt_putid(slotptr(root, 2)->id, right);
 	slotptr(root, 2)->off = nxt;
+#endif
 
 	bt_putid(root->right, 0);
 	root->min = nxt;		// reset lowest used offset and key count
@@ -1287,8 +1308,16 @@ BTERR bt_splitpage(BtDb *bt)
 	//	remember fence key for new page to add
 	//	as foster child
 
+#ifdef LOWFENCE
+	key = keyptr(page, 1);
+	memcpy(lowfencekey, key, key->len + 1);
+
+	key = keyptr(bt->frame, idx);
+	memcpy(highfencekey, key, key->len + 1);
+#else
 	key = keyptr(bt->frame, idx);
 	memcpy(fencekey, key, key->len + 1);
+#endif
 
 	//	update lower keys and foster children to continue in old page
 
@@ -1313,7 +1342,15 @@ BTERR bt_splitpage(BtDb *bt)
 	}
 
 	//	insert new foster child at beginning of the current foster children
-
+#ifdef LOWFENCE
+	nxt -= *highfencekey + 1;
+	memcpy((unsigned char *)page + nxt, highfencekey, *highfencekey + 1);
+	bt_putid(slotptr(page, ++idx)->id, new_page);
+	slotptr(page, idx)->tod = tod;
+	slotptr(page, idx)->off = nxt;
+	page->foster++;
+	page->act++;
+#else
 	nxt -= *fencekey + 1;
 	memcpy((unsigned char *)page + nxt, fencekey, *fencekey + 1);
 	bt_putid(slotptr(page, ++idx)->id, new_page);
@@ -1321,6 +1358,7 @@ BTERR bt_splitpage(BtDb *bt)
 	slotptr(page, idx)->off = nxt;
 	page->foster++;
 	page->act++;
+#endif
 
 	//  continue with old foster child keys if any
 
@@ -1374,7 +1412,11 @@ BTERR bt_splitpage(BtDb *bt)
 try_again:
 
 	do {
+#ifdef LOWFENCE
+		slot = bt_loadpage(bt, highfencekey + 1, *highfencekey, lvl + 1, BtLockWrite);
+#else
 		slot = bt_loadpage(bt, fencekey + 1, *fencekey, lvl + 1, BtLockWrite);
+#endif
 
 		if (!slot)
 			return bt->err;
