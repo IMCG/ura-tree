@@ -25,7 +25,7 @@ REDISTRIBUTION OF THIS SOFTWARE.
 #define _LARGEFILE64_SOURCE
 
 // Constants
-#define BITS 14
+#define BITS 12//14
 #define POOLSIZE 32768u // Max 65535
 #define SEGSIZE 4
 #define NUMMODE 0
@@ -166,8 +166,9 @@ typedef struct {
 	unsigned long long readlockfail[MAXTHREADS];
 	unsigned long long writelockfail[MAXTHREADS];
 
-	// Test var, remove this
+	// Test vars, remove this
 	int flag;
+	int counter;
 } BtMgr;
 
 typedef struct {
@@ -1167,7 +1168,7 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 {
 	uint nxt = bt->mgr->page_size;
 #ifdef LOWFENCE
-	unsigned char lowfencekey[256], highfencekey[256], starter[256];
+	unsigned char fencekey[256], starter[256];
 #else
 	unsigned char fencekey[256];
 #endif
@@ -1178,7 +1179,7 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 
 	// TODO: This is testing/debugging code
 	if (bt->mgr->flag & 0x1) {
-		fprintf(stdout, "First root split before:\n");
+		fprintf(stdout, "\nFirst root split before:\n");
 
 		for (test = 1; test <= root->cnt; test++) {
 			ptr = keyptr(root, test);
@@ -1196,16 +1197,8 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 	root->foster--;
 
 	//	Save left fence key.
-#ifdef LOWFENCE
-	key = keyptr(root, 2);
-	memcpy(lowfencekey, key, key->len + 1);
-
-	key = keyptr(root, root->cnt);
-	memcpy(highfencekey, key, key->len + 1);
-#else
 	key = keyptr(root, root->cnt);
 	memcpy(fencekey, key, key->len + 1);
-#endif
 
 	//  copy the lower keys into a new left page
 
@@ -1229,33 +1222,26 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 	bt_putid(slotptr(root, 1)->id, 0);
 	slotptr(root, 1)->off = nxt;
 
-	// Insert low fence key on newroot page
-	//nxt -= *lowfencekey + 1;
-	//memcpy((unsigned char *)root + nxt, lowfencekey, *lowfencekey + 1);
-	//// FIXME: lowfence should not point to newpage
-	//bt_putid(slotptr(root, 2)->id, 0);
-	//slotptr(root, 2)->off = nxt;
-
-	// Insert high fence key on newroot page
-	nxt -= *highfencekey + 1;
-	memcpy((unsigned char *)root + nxt, highfencekey, *highfencekey + 1);
+	// Insert key on newroot page
+	nxt -= *fencekey + 1;
+	memcpy((unsigned char *)root + nxt, fencekey, *fencekey + 1);
 	bt_putid(slotptr(root, 2)->id, new_page);
 	slotptr(root, 2)->off = nxt;
 
 	// Insert stopper key on newroot page
 	nxt -= 3;
-	highfencekey[0] = 2;
-	highfencekey[1] = 0xff;
-	highfencekey[2] = 0xff;
-	memcpy((unsigned char *)root + nxt, highfencekey, *highfencekey + 1);
+	fencekey[0] = 2;
+	fencekey[1] = 0xff;
+	fencekey[2] = 0xff;
+	memcpy((unsigned char *)root + nxt, fencekey, *fencekey + 1);
 	bt_putid(slotptr(root, 3)->id, right);
 	slotptr(root, 3)->off = nxt;
 
 	// Increase root height
 	bt_putid(root->right, 0);
 	root->min = nxt;		// reset lowest used offset and key count
-	root->cnt = 4;
-	root->act = 4;
+	root->cnt = 3;
+	root->act = 3;
 	root->lvl++;
 #else
 	nxt -= *fencekey + 1;
@@ -1284,13 +1270,15 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 	// TODO: This is test code
 	if (bt->mgr->flag & 0x1) {
 		bt->mgr->flag = bt->mgr->flag & 0xe;
-		fprintf(stdout, "First root split after:\n");
+		fprintf(stdout, "\nFirst root split after:\n");
 
 		for (test = 1; test <= root->cnt; test++) {
 			ptr = keyptr(root, test);
 			fwrite(ptr->key, ptr->len, 1, stdout);
 			fputc('\n', stdout);
 		}
+
+		fprintf(stdout, "-----------------------------------------------------\n");
 	}
 
 	// release root (bt->page)
@@ -1305,26 +1293,29 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 BTERR bt_splitpage(BtDb *bt)
 {
 	uint slot, cnt, idx, max, nxt = bt->mgr->page_size;
-#ifdef LOWFENCE
-	unsigned char lowfencekey[256], highfencekey[256];
-#else
 	unsigned char fencekey[256];
-#endif
 	uid page_no = bt->page_no;
 	BtPage page = bt->page;
 	uint tod = time(NULL);
 	uint lvl = page->lvl;
 	uid new_page, right;
 	BtKey key, ptr;
-	int test;
+	int test, hasfoster = 0;
 
 	// TODO: This is test code
-	if (bt->mgr->flag & 0x2) {
-		fprintf(stdout, "First normal split before:\n");
+	if (bt->mgr->flag & 0x2 || bt->mgr->counter == 10 || page->foster > 0) {
+		fprintf(stdout, "\nA normal split before:\n");
+		fprintf(stdout, "    cnt=%d\n", page->cnt);
+		fprintf(stdout, "    act=%d\n", page->act);
+		fprintf(stdout, "    foster=%d\n", page->foster);
+
+		if (page->foster > 0)
+			hasfoster = 1;
 
 		for (test = 1; test <= page->cnt; test++) {
 			ptr = keyptr(page, test);
 			fwrite(ptr->key, ptr->len, 1, stdout);
+			fprintf(stdout, ", dead=%u", slotptr(page, test)->dead);
 			fputc('\n', stdout);
 		}
 	}
@@ -1339,6 +1330,17 @@ BTERR bt_splitpage(BtDb *bt)
 
 	//  split higher half of keys to bt->frame
 	//	leaving foster children in the left node.
+
+#ifdef LOWFENCE
+	// Include what will be fence key but mark as dead
+	key = keyptr(page, cnt);
+	nxt -= key->len + 1;
+	memcpy((unsigned char *)bt->frame + nxt, key, key->len + 1);
+	memcpy(slotptr(bt->frame, ++idx)->id, slotptr(page, cnt)->id, BtId);
+	slotptr(bt->frame, idx)->tod = slotptr(page, cnt)->tod;
+	slotptr(bt->frame, idx)->off = nxt;
+	slotptr(bt->frame, idx)->dead = 1;
+#endif
 
 	while (cnt++ < max) {
 		key = keyptr(page, cnt);
@@ -1370,16 +1372,8 @@ BTERR bt_splitpage(BtDb *bt)
 	//	remember fence key for new page to add
 	//	as foster child
 
-#ifdef LOWFENCE
-	key = keyptr(page, 1);
-	memcpy(lowfencekey, key, key->len + 1);
-
-	key = keyptr(bt->frame, idx);
-	memcpy(highfencekey, key, key->len + 1);
-#else
 	key = keyptr(bt->frame, idx);
 	memcpy(fencekey, key, key->len + 1);
-#endif
 
 	//	update lower keys and foster children to continue in old page
 
@@ -1404,15 +1398,6 @@ BTERR bt_splitpage(BtDb *bt)
 	}
 
 	//	insert new foster child at beginning of the current foster children
-#ifdef LOWFENCE
-	nxt -= *highfencekey + 1;
-	memcpy((unsigned char *)page + nxt, highfencekey, *highfencekey + 1);
-	bt_putid(slotptr(page, ++idx)->id, new_page);
-	slotptr(page, idx)->tod = tod;
-	slotptr(page, idx)->off = nxt;
-	page->foster++;
-	page->act++;
-#else
 	nxt -= *fencekey + 1;
 	memcpy((unsigned char *)page + nxt, fencekey, *fencekey + 1);
 	bt_putid(slotptr(page, ++idx)->id, new_page);
@@ -1420,7 +1405,6 @@ BTERR bt_splitpage(BtDb *bt)
 	slotptr(page, idx)->off = nxt;
 	page->foster++;
 	page->act++;
-#endif
 
 	//  continue with old foster child keys if any
 
@@ -1464,13 +1448,8 @@ BTERR bt_splitpage(BtDb *bt)
 	if (bt_lockpage(bt, page_no, BtLockRead, &page))
 		return bt->err;
 
-#ifdef LOWFENCE
-	key = keyptr(page, page->cnt);
-	memcpy(highfencekey, key, key->len + 1);
-#else
 	key = keyptr(page, page->cnt);
 	memcpy(fencekey, key, key->len + 1);
-#endif
 
 	if (bt_unlockpage(bt, page_no, BtLockRead))
 		return bt->err;
@@ -1479,11 +1458,7 @@ BTERR bt_splitpage(BtDb *bt)
 try_again:
 
 	do {
-#ifdef LOWFENCE
-		slot = bt_loadpage(bt, highfencekey + 1, *highfencekey, lvl + 1, BtLockWrite);
-#else
 		slot = bt_loadpage(bt, fencekey + 1, *fencekey, lvl + 1, BtLockWrite);
-#endif
 
 		if (!slot)
 			return bt->err;
@@ -1551,39 +1526,45 @@ try_again:
 		return bt->err;
 
 	// TODO: This is test code
-	if (bt->mgr->flag & 0x2) {
+	if (bt->mgr->flag & 0x2 || bt->mgr->counter == 10 || hasfoster) {
 		bt->mgr->flag = bt->mgr->flag & 0xd;
 
-		fprintf(stdout, "First normal split after 1:\n");
+		fprintf(stdout, "\nA normal split - page 1:\n");
 
 		for (test = 1; test <= page->cnt; test++) {
 			ptr = keyptr(page, test);
 			fwrite(ptr->key, ptr->len, 1, stdout);
+			fprintf(stdout, ", dead=%u", slotptr(page, test)->dead);
 			fputc('\n', stdout);
 		}
 
 		if (bt_lockpage(bt, new_page, BtLockRead, &page))
 			return bt->err;
 
-		fprintf(stdout, "First normal split after 2:\n");
+		fprintf(stdout, "\nA normal split - page 2:\n");
 		for (test = 1; test <= page->cnt; test++) {
 			ptr = keyptr(page, test);
 			fwrite(ptr->key, ptr->len, 1, stdout);
+			fprintf(stdout, ", dead=%u", slotptr(page, test)->dead);
 			fputc('\n', stdout);
 		}
 
 		if (bt_unlockpage(bt, new_page, BtLockRead))
 			return bt->err;
 
-		fprintf(stdout, "First normal split after parent:\n");
+		fprintf(stdout, "\nA normal split - parent:\n");
 
 		for (test = 1; test <= bt->page->cnt; test++) {
 			ptr = keyptr(bt->page, test);
 			fwrite(ptr->key, ptr->len, 1, stdout);
+			fprintf(stdout, ", dead=%u", slotptr(bt->page, test)->dead);
 			fputc('\n', stdout);
 		}
+
+		fprintf(stdout, "-----------------------------------------------------\n");
 		
 	}
+	bt->mgr->counter++;
 
 	//return bt_unlockpage(bt, page_no, BtLockParent);
 	return 0;
@@ -1768,12 +1749,9 @@ void *index_file(void *arg)
 		fprintf(stdout, "The file called %s has been loaded\n", args->ctx_string);
 
 		/*Split the text by endline characters*/
-		//token = strtok(fileBuffer, "\n");
 		numchars = 0;
 		while (numchars < numbytes) {
 			line++;
-			//len = (int)strlen(token);
-			//numchars += (long)len + 1;
 			len = 0;
 
 			ch[0] = '\0';
@@ -1781,18 +1759,11 @@ void *index_file(void *arg)
 				memcpy(ch, fileBuffer + numchars + len, 1);
 				len += 1;
 			}
-			//fprintf(stdout, "len: %d\n", len);
 			memcpy(key, fileBuffer + numchars, len - 1);
 			numchars += len;
-			//fprintf(stdout, "key: %s, numchars: %d\n", key, numchars);
 
 			if (bt_insertkey(bt, key, (len-1), line, *tod))
 				fprintf(stderr, "Error %d Line: %d\n", bt->err, line), exit(0);
-
-			//fprintf(stdout, "thread: %s, token: %s, len: %d, line: %d\n", args->ctx_string, token, len, line);
-
-			//token = strtok(fileBuffer+numchars, "\n");
-			
 		}
 
 		/* free the memory we used for the buffer */
@@ -1950,7 +1921,7 @@ typedef struct timeval timer;
 
 int main(int argc, char **argv)
 {
-	int idx, cnt, len, slot, err;
+	int idx, cnt, len, slot, err, stats;
 	pthread_t *threads;
 	timer start, stop;
 	double real_time;
@@ -1962,8 +1933,8 @@ int main(int argc, char **argv)
 	BtDb *bt;
 
 	if (argc < 5) {
-		fprintf(stderr, "Usage: %s somestring Write/Find/Multithread/Scan context_num context_string1 [context_string2...]\n", argv[0]);
-		fprintf(stderr, "  somestring is not in use right now\n");
+		fprintf(stderr, "Usage: %s stats(0 or 1) Write/Find/Multithread/Scan context_num context_string1 [context_string2...]\n", argv[0]);
+		fprintf(stderr, "  stats is whether or not you want to see timing statistics\n");
 		fprintf(stderr, "  Write (w), Find (f), Multithread (m), and Scan (s) are the only options right now\n");
 		fprintf(stderr, "  context_num is some number that might be used in processing\n");
 		fprintf(stderr, "  context_string1 thru context_stringn are dependent on function\n\n");
@@ -1976,6 +1947,7 @@ int main(int argc, char **argv)
 
 	gettimeofday(&start, NULL);
 
+	stats = atoi(argv[1]);
 	ctx_num = atoi(argv[3]);
 
 	cnt = argc - 4;
@@ -1985,6 +1957,7 @@ int main(int argc, char **argv)
 
 	mgr = bt_mgr((argv[1]), BT_rw, BITS, POOLSIZE, SEGSIZE);
 	mgr->flag = 0x3;
+	mgr->counter = 0;
 
 	if (!mgr) {
 		fprintf(stderr, "Index Open Error %s\n", argv[1]);
@@ -2012,36 +1985,39 @@ int main(int argc, char **argv)
 
 	gettimeofday(&stop, NULL);
 	real_time = 1000.0 * (stop.tv_sec - start.tv_sec) + 0.001 * (stop.tv_usec - start.tv_usec);
-	fprintf(stdout, " Time to complete: %.2f seconds\n", real_time / 1000);
-	fprintf(stdout, " Time waiting for read locks:\n");
-	for (idx = 0; idx < cnt; idx++) {
-		fprintf(stdout, "     Thread %d - %.2f seconds\n", idx, (double)(mgr->readlockwait[idx] / getTicksPerNano() / 1000000000));
-	}
-	fprintf(stdout, " Time waiting for write locks:\n");
-	for (idx = 0; idx < cnt; idx++) {
-		fprintf(stdout, "     Thread %d - %.2f seconds\n", idx, (double)(mgr->writelockwait[idx] / getTicksPerNano() / 1000000000));
-	}
-	fprintf(stdout, " Number of read locks aquired:\n");
-	for (idx = 0; idx < cnt; idx++) {
-		fprintf(stdout, "     Thread %d - %llu aquired\n", idx, mgr->readlockaquired[idx]);
-	}
-	fprintf(stdout, " Number of write locks aquired:\n");
-	for (idx = 0; idx < cnt; idx++) {
-		fprintf(stdout, "     Thread %d - %llu aquired\n", idx, mgr->writelockaquired[idx]);
-	}
-	fprintf(stdout, " Number of read locks failed:\n");
-	for (idx = 0; idx < cnt; idx++) {
-		fprintf(stdout, "     Thread %d - %llu attempts\n", idx, mgr->readlockfail[idx]);
-	}
-	fprintf(stdout, " Number of write locks failed:\n");
-	for (idx = 0; idx < cnt; idx++) {
-		fprintf(stdout, "     Thread %d - %llu attempts\n", idx, mgr->writelockfail[idx]);
-	}
-	fprintf(stdout, "\n CSV Lines: \n");
-	fprintf(stdout, "Threads,Execution,Thread_Id,Read_Lock_Wait,Write_Lock_Wait,Read_Lock_Aquired,Write_Lock_Aquired,Read_Lock_Failed,Write_Lock_Failed\n");
-	for (idx = 0; idx < cnt; idx++) {
-		fprintf(stdout, "%d,%.2f,%d,%.2f,%.2f,%llu,%llu,%llu,%llu\n", cnt, (real_time / 1000), idx, (double)(mgr->readlockwait[idx] / getTicksPerNano()),
-			(double)(mgr->writelockwait[idx] / getTicksPerNano()), mgr->readlockaquired[idx], mgr->writelockaquired[idx], mgr->readlockfail[idx], mgr->writelockfail[idx]);
+
+	if (stats) {
+		fprintf(stdout, " Time to complete: %.2f seconds\n", real_time / 1000);
+		fprintf(stdout, " Time waiting for read locks:\n");
+		for (idx = 0; idx < cnt; idx++) {
+			fprintf(stdout, "     Thread %d - %.2f seconds\n", idx, (double)(mgr->readlockwait[idx] / getTicksPerNano() / 1000000000));
+		}
+		fprintf(stdout, " Time waiting for write locks:\n");
+		for (idx = 0; idx < cnt; idx++) {
+			fprintf(stdout, "     Thread %d - %.2f seconds\n", idx, (double)(mgr->writelockwait[idx] / getTicksPerNano() / 1000000000));
+		}
+		fprintf(stdout, " Number of read locks aquired:\n");
+		for (idx = 0; idx < cnt; idx++) {
+			fprintf(stdout, "     Thread %d - %llu aquired\n", idx, mgr->readlockaquired[idx]);
+		}
+		fprintf(stdout, " Number of write locks aquired:\n");
+		for (idx = 0; idx < cnt; idx++) {
+			fprintf(stdout, "     Thread %d - %llu aquired\n", idx, mgr->writelockaquired[idx]);
+		}
+		fprintf(stdout, " Number of read locks failed:\n");
+		for (idx = 0; idx < cnt; idx++) {
+			fprintf(stdout, "     Thread %d - %llu attempts\n", idx, mgr->readlockfail[idx]);
+		}
+		fprintf(stdout, " Number of write locks failed:\n");
+		for (idx = 0; idx < cnt; idx++) {
+			fprintf(stdout, "     Thread %d - %llu attempts\n", idx, mgr->writelockfail[idx]);
+		}
+		fprintf(stdout, "\n CSV Lines: \n");
+		fprintf(stdout, "Threads,Execution,Thread_Id,Read_Lock_Wait,Write_Lock_Wait,Read_Lock_Aquired,Write_Lock_Aquired,Read_Lock_Failed,Write_Lock_Failed\n");
+		for (idx = 0; idx < cnt; idx++) {
+			fprintf(stdout, "%d,%.2f,%d,%.2f,%.2f,%llu,%llu,%llu,%llu\n", cnt, (real_time / 1000), idx, (double)(mgr->readlockwait[idx] / getTicksPerNano()),
+				(double)(mgr->writelockwait[idx] / getTicksPerNano()), mgr->readlockaquired[idx], mgr->writelockaquired[idx], mgr->readlockfail[idx], mgr->writelockfail[idx]);
+		}
 	}
 
 	bt_mgrclose(mgr);
