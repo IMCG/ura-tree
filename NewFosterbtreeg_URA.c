@@ -33,7 +33,7 @@ REDISTRIBUTION OF THIS SOFTWARE.
 #define MAXTHREADS 32
 
 #define _GNU_SOURCE
-//#define LOWFENCE
+#define LOWFENCE
 
 #include <unistd.h>
 #include <stdio.h>
@@ -488,14 +488,14 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize)
 	for (lvl = MIN_lvl; lvl--;) {
 #ifdef LOWFENCE
 		slotptr(alloc, 1)->off = mgr->page_size - 3;
-		bt_putid(slotptr(alloc, 1)->id, lvl ? (MIN_lvl - lvl + 1) * 2 : 0);		// next(lower) page number
+		bt_putid(slotptr(alloc, 1)->id, 0);		// No pages to the left of this
 		key = keyptr(alloc, 1);
 		key->len = 2;			// create starter key
 		key->key[0] = 0x00;
 		key->key[1] = 0x00;
 
 		slotptr(alloc, 2)->off = mgr->page_size - 6;
-		bt_putid(slotptr(alloc, 2)->id, lvl ? (MIN_lvl - lvl + 1) * 2 + 1 : 1);		// next(lower) page number
+		bt_putid(slotptr(alloc, 2)->id, lvl ? MIN_lvl - lvl + 1 : 0);		// next(lower) page number
 		key = keyptr(alloc, 2);
 		key->len = 2;			// create stopper key
 		key->key[0] = 0xff;
@@ -1164,7 +1164,7 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 {
 	uint nxt = bt->mgr->page_size;
 #ifdef LOWFENCE
-	unsigned char lowfencekey[256], highfencekey[256];
+	unsigned char lowfencekey[256], highfencekey[256], starter[256];
 #else
 	unsigned char fencekey[256];
 #endif
@@ -1205,29 +1205,52 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 	// insert left fence key on empty newroot page
 
 #ifdef LOWFENCE
+	// Insert starter key on newroot page
+	nxt -= 3;
+	starter[0] = 2;
+	starter[1] = 0x00;
+	starter[2] = 0x00;
+	memcpy((unsigned char *)root + nxt, starter, *starter + 1);
+	bt_putid(slotptr(root, 1)->id, 0);
+	slotptr(root, 1)->off = nxt;
+
+	// Insert low fence key on newroot page
+	nxt -= *lowfencekey + 1;
+	memcpy((unsigned char *)root + nxt, lowfencekey, *lowfencekey + 1);
+	// FIXME: lowfence should not point to newpage
+	bt_putid(slotptr(root, 2)->id, 0);
+	slotptr(root, 2)->off = nxt;
+
+	// Insert high fence key on newroot page
 	nxt -= *highfencekey + 1;
 	memcpy((unsigned char *)root + nxt, highfencekey, *highfencekey + 1);
-	bt_putid(slotptr(root, 1)->id, new_page);
-	slotptr(root, 1)->off = nxt;
-#else
-	nxt -= *fencekey + 1;
-	memcpy((unsigned char *)root + nxt, fencekey, *fencekey + 1);
-	bt_putid(slotptr(root, 1)->id, new_page);
-	slotptr(root, 1)->off = nxt;
-#endif
+	bt_putid(slotptr(root, 3)->id, new_page);
+	slotptr(root, 3)->off = nxt;
 
-	// insert stopper key on newroot page
-	// and increase the root height
-
-#ifdef LOWFENCE
+	// Insert stopper key on newroot page
 	nxt -= 3;
 	highfencekey[0] = 2;
 	highfencekey[1] = 0xff;
 	highfencekey[2] = 0xff;
 	memcpy((unsigned char *)root + nxt, highfencekey, *highfencekey + 1);
-	bt_putid(slotptr(root, 2)->id, right);
-	slotptr(root, 2)->off = nxt;
+	bt_putid(slotptr(root, 4)->id, right);
+	slotptr(root, 4)->off = nxt;
+
+	// Increase root height
+	bt_putid(root->right, 0);
+	root->min = nxt;		// reset lowest used offset and key count
+	root->cnt = 4;
+	root->act = 4;
+	root->lvl++;
 #else
+	nxt -= *fencekey + 1;
+	memcpy((unsigned char *)root + nxt, fencekey, *fencekey + 1);
+	bt_putid(slotptr(root, 1)->id, new_page);
+	slotptr(root, 1)->off = nxt;
+
+	// insert stopper key on newroot page
+	// and increase the root height
+
 	nxt -= 3;
 	fencekey[0] = 2;
 	fencekey[1] = 0xff;
@@ -1235,13 +1258,13 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 	memcpy((unsigned char *)root + nxt, fencekey, *fencekey + 1);
 	bt_putid(slotptr(root, 2)->id, right);
 	slotptr(root, 2)->off = nxt;
-#endif
 
 	bt_putid(root->right, 0);
 	root->min = nxt;		// reset lowest used offset and key count
 	root->cnt = 2;
 	root->act = 2;
 	root->lvl++;
+#endif
 
 	// release root (bt->page)
 
@@ -1402,8 +1425,13 @@ BTERR bt_splitpage(BtDb *bt)
 	if (bt_lockpage(bt, page_no, BtLockRead, &page))
 		return bt->err;
 
+#ifdef LOWFENCE
+	key = keyptr(page, page->cnt);
+	memcpy(highfencekey, key, key->len + 1);
+#else
 	key = keyptr(page, page->cnt);
 	memcpy(fencekey, key, key->len + 1);
+#endif
 
 	if (bt_unlockpage(bt, page_no, BtLockRead))
 		return bt->err;
@@ -1614,6 +1642,8 @@ void *index_file(void *arg)
 	int len = 0, slot, rowid, numchars;
 	time_t tod[1];
 	BtKey ptr;
+	BtPage page;
+	uid right;
 	BtDb *bt;
 	FILE *in;
 	char *fileBuffer, *token;
@@ -1691,15 +1721,34 @@ void *index_file(void *arg)
 		free(fileBuffer);
 
 		fprintf(stdout, "finished %s for %d keys\n", args->ctx_string, line);
+		/*
+		fprintf(stdout, "started reading\n");
 
-		/*if (rowid = bt_findkey(bt, "police", 6)) {
+		if (slot = bt_startkey(bt, key, len))
+			slot--;
+		else
+			fprintf(stderr, "Error %d in StartKey. Syserror: %d\n", bt->err, errno), exit(0);
+
+		line++;
+		while (slot = bt_nextkey(bt, slot)) {
+			ptr = bt_key(bt, slot);
+			line++;
+			//fwrite(ptr->key, ptr->len, 1, stdout);
+			//fputc('\n', stdout);
+		}
+
+		fprintf(stdout, "Finished reading %d keys\n", line);
+		*/
+
+		
+		if (rowid = bt_findkey(bt, "voluntary", 9)) {
 			fprintf(stdout, "Found the key in row: %d\n", rowid);
 		}
 		else {
 			fprintf(stdout, "Key not found\n");
 		}
 
-		if (slot = bt_loadpage(bt, "police", 6, 0, BtLockRead)) {
+		if (slot = bt_loadpage(bt, "voluntary", 9, 0, BtLockRead)) {
 			fprintf(stdout, "Found the slot: %d\n", slot);
 			ptr = keyptr(bt->page, slot);
 			fwrite(ptr->key, ptr->len, 1, stdout);
@@ -1711,12 +1760,35 @@ void *index_file(void *arg)
 
 		if (slot && rowid && bt->page) {
 			fprintf(stdout, "Printing out page:\n");
-			for (found = 1; found < bt->page->cnt; found++) {
+			for (found = 1; found <= bt->page->cnt; found++) {
 				ptr = keyptr(bt->page, found);
 				fwrite(ptr->key, ptr->len, 1, stdout);
 				fputc('\n', stdout);
 			}
-		}*/
+		}
+
+		fprintf(stdout, "Check next page: %ld, next is: %ld\n", bt->page_no, bt_getid(bt->page->right));
+		if (bt->page->right) {
+			right = bt_getid(bt->page->right);
+			bt->cursor_page = right;
+
+			if (bt_lockpage(bt, right, BtLockRead, &page))
+				return 0;
+
+			memcpy(bt->cursor, page, bt->mgr->page_size);
+
+			if (bt_unlockpage(bt, right, BtLockRead))
+				return 0;
+
+			slot = 0;
+
+			for (found = 1; found <= bt->cursor->cnt; found++) {
+				ptr = keyptr(bt->cursor, found);
+				fwrite(ptr->key, ptr->len, 1, stdout);
+				fputc('\n', stdout);
+			}
+		}
+		
 		break;
 	case 's':
 		len = key[0] = 0;
