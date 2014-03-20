@@ -1230,17 +1230,17 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 	slotptr(root, 1)->off = nxt;
 
 	// Insert low fence key on newroot page
-	nxt -= *lowfencekey + 1;
-	memcpy((unsigned char *)root + nxt, lowfencekey, *lowfencekey + 1);
-	// FIXME: lowfence should not point to newpage
-	bt_putid(slotptr(root, 2)->id, 0);
-	slotptr(root, 2)->off = nxt;
+	//nxt -= *lowfencekey + 1;
+	//memcpy((unsigned char *)root + nxt, lowfencekey, *lowfencekey + 1);
+	//// FIXME: lowfence should not point to newpage
+	//bt_putid(slotptr(root, 2)->id, 0);
+	//slotptr(root, 2)->off = nxt;
 
 	// Insert high fence key on newroot page
 	nxt -= *highfencekey + 1;
 	memcpy((unsigned char *)root + nxt, highfencekey, *highfencekey + 1);
-	bt_putid(slotptr(root, 3)->id, new_page);
-	slotptr(root, 3)->off = nxt;
+	bt_putid(slotptr(root, 2)->id, new_page);
+	slotptr(root, 2)->off = nxt;
 
 	// Insert stopper key on newroot page
 	nxt -= 3;
@@ -1248,8 +1248,8 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 	highfencekey[1] = 0xff;
 	highfencekey[2] = 0xff;
 	memcpy((unsigned char *)root + nxt, highfencekey, *highfencekey + 1);
-	bt_putid(slotptr(root, 4)->id, right);
-	slotptr(root, 4)->off = nxt;
+	bt_putid(slotptr(root, 3)->id, right);
+	slotptr(root, 3)->off = nxt;
 
 	// Increase root height
 	bt_putid(root->right, 0);
@@ -1547,6 +1547,9 @@ try_again:
 	if (bt_unlockpage(bt, page_no, BtLockWrite))
 		return bt->err;
 
+	if (bt_unlockpage(bt, page_no, BtLockParent))
+		return bt->err;
+
 	// TODO: This is test code
 	if (bt->mgr->flag & 0x2) {
 		bt->mgr->flag = bt->mgr->flag & 0xd;
@@ -1559,16 +1562,31 @@ try_again:
 			fputc('\n', stdout);
 		}
 
+		if (bt_lockpage(bt, new_page, BtLockRead, &page))
+			return bt->err;
+
 		fprintf(stdout, "First normal split after 2:\n");
+		for (test = 1; test <= page->cnt; test++) {
+			ptr = keyptr(page, test);
+			fwrite(ptr->key, ptr->len, 1, stdout);
+			fputc('\n', stdout);
+		}
+
+		if (bt_unlockpage(bt, new_page, BtLockRead))
+			return bt->err;
+
+		fprintf(stdout, "First normal split after parent:\n");
 
 		for (test = 1; test <= bt->page->cnt; test++) {
 			ptr = keyptr(bt->page, test);
 			fwrite(ptr->key, ptr->len, 1, stdout);
 			fputc('\n', stdout);
 		}
+		
 	}
 
-	return bt_unlockpage(bt, page_no, BtLockParent);
+	//return bt_unlockpage(bt, page_no, BtLockParent);
+	return 0;
 }
 
 //  Insert new key into the btree at leaf level.
