@@ -165,6 +165,9 @@ typedef struct {
 	unsigned long long writelockaquired[MAXTHREADS];
 	unsigned long long readlockfail[MAXTHREADS];
 	unsigned long long writelockfail[MAXTHREADS];
+
+	// Test var, remove this
+	int flag;
 } BtMgr;
 
 typedef struct {
@@ -1170,7 +1173,19 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 #endif
 	BtPage root = bt->page;
 	uid new_page;
-	BtKey key;
+	BtKey key, ptr;
+	int test;
+
+	// TODO: This is testing/debugging code
+	if (bt->mgr->flag & 0x1) {
+		fprintf(stdout, "First root split before:\n");
+
+		for (test = 1; test <= root->cnt; test++) {
+			ptr = keyptr(root, test);
+			fwrite(ptr->key, ptr->len, 1, stdout);
+			fputc('\n', stdout);
+		}
+	}
 
 	//  Obtain an empty page to use, and copy the left page
 	//  contents into it from the root.  Strip foster child key.
@@ -1182,7 +1197,7 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 
 	//	Save left fence key.
 #ifdef LOWFENCE
-	key = keyptr(root, 1);
+	key = keyptr(root, 2);
 	memcpy(lowfencekey, key, key->len + 1);
 
 	key = keyptr(root, root->cnt);
@@ -1266,6 +1281,18 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 	root->lvl++;
 #endif
 
+	// TODO: This is test code
+	if (bt->mgr->flag & 0x1) {
+		bt->mgr->flag = bt->mgr->flag & 0xe;
+		fprintf(stdout, "First root split after:\n");
+
+		for (test = 1; test <= root->cnt; test++) {
+			ptr = keyptr(root, test);
+			fwrite(ptr->key, ptr->len, 1, stdout);
+			fputc('\n', stdout);
+		}
+	}
+
 	// release root (bt->page)
 
 	return bt_unlockpage(bt, ROOT_page, BtLockWrite);
@@ -1288,7 +1315,19 @@ BTERR bt_splitpage(BtDb *bt)
 	uint tod = time(NULL);
 	uint lvl = page->lvl;
 	uid new_page, right;
-	BtKey key;
+	BtKey key, ptr;
+	int test;
+
+	// TODO: This is test code
+	if (bt->mgr->flag & 0x2) {
+		fprintf(stdout, "First normal split before:\n");
+
+		for (test = 1; test <= page->cnt; test++) {
+			ptr = keyptr(page, test);
+			fwrite(ptr->key, ptr->len, 1, stdout);
+			fputc('\n', stdout);
+		}
+	}
 
 	//	initialize frame buffer
 
@@ -1508,6 +1547,27 @@ try_again:
 	if (bt_unlockpage(bt, page_no, BtLockWrite))
 		return bt->err;
 
+	// TODO: This is test code
+	if (bt->mgr->flag & 0x2) {
+		bt->mgr->flag = bt->mgr->flag & 0xd;
+
+		fprintf(stdout, "First normal split after 1:\n");
+
+		for (test = 1; test <= page->cnt; test++) {
+			ptr = keyptr(page, test);
+			fwrite(ptr->key, ptr->len, 1, stdout);
+			fputc('\n', stdout);
+		}
+
+		fprintf(stdout, "First normal split after 2:\n");
+
+		for (test = 1; test <= bt->page->cnt; test++) {
+			ptr = keyptr(bt->page, test);
+			fwrite(ptr->key, ptr->len, 1, stdout);
+			fputc('\n', stdout);
+		}
+	}
+
 	return bt_unlockpage(bt, page_no, BtLockParent);
 }
 
@@ -1722,6 +1782,26 @@ void *index_file(void *arg)
 
 		fprintf(stdout, "finished %s for %d keys\n", args->ctx_string, line);
 		/*
+		fprintf(stdout, "Check root page:\n");
+
+		if (bt_lockpage(bt, ROOT_page, BtLockRead, &page))
+			return 0;
+
+		fprintf(stdout, "    cnt: %d\n", page->cnt);
+		fprintf(stdout, "    act: %d\n", page->act);
+		fprintf(stdout, "    foster: %d\n", page->foster);
+		fprintf(stdout, "    lvl: %d\n", page->lvl);
+
+		for (found = 1; found <= page->cnt; found++) {
+			ptr = keyptr(bt->page, found);
+			fwrite(ptr->key, ptr->len, 1, stdout);
+			fputc('\n', stdout);
+		}
+
+		if (bt_unlockpage(bt, ROOT_page, BtLockRead))
+			return 0;
+		*/
+		/*
 		fprintf(stdout, "started reading\n");
 
 		if (slot = bt_startkey(bt, key, len))
@@ -1740,7 +1820,7 @@ void *index_file(void *arg)
 		fprintf(stdout, "Finished reading %d keys\n", line);
 		*/
 
-		
+		/*
 		if (rowid = bt_findkey(bt, "voluntary", 9)) {
 			fprintf(stdout, "Found the key in row: %d\n", rowid);
 		}
@@ -1766,7 +1846,7 @@ void *index_file(void *arg)
 				fputc('\n', stdout);
 			}
 		}
-
+		
 		fprintf(stdout, "Check next page: %ld, next is: %ld\n", bt->page_no, bt_getid(bt->page->right));
 		if (bt->page->right) {
 			right = bt_getid(bt->page->right);
@@ -1788,6 +1868,7 @@ void *index_file(void *arg)
 				fputc('\n', stdout);
 			}
 		}
+		*/
 		
 		break;
 	case 's':
@@ -1885,6 +1966,7 @@ int main(int argc, char **argv)
 	args = malloc(cnt * sizeof(ThreadArg));
 
 	mgr = bt_mgr((argv[1]), BT_rw, BITS, POOLSIZE, SEGSIZE);
+	mgr->flag = 0x3;
 
 	if (!mgr) {
 		fprintf(stderr, "Index Open Error %s\n", argv[1]);
