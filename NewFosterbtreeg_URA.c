@@ -29,7 +29,7 @@ REDISTRIBUTION OF THIS SOFTWARE.
 #define POOLSIZE 32768u // Max 65535
 #define SEGSIZE 4
 #define NUMMODE 0
-#define BUFFERSIZE 4294967296u//2147483648 //1073741824
+#define BUFFERSIZE 8589934592u//4294967296u//2147483648 //1073741824
 #define MAXTHREADS 32
 
 #define _GNU_SOURCE
@@ -1172,7 +1172,7 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 #else
 	unsigned char fencekey[256];
 #endif
-	BtPage root = bt->page;
+	BtPage root = bt->page, page;
 	uid new_page;
 	BtKey key, ptr;
 	int test;
@@ -1270,13 +1270,27 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 	// TODO: This is test code
 	if (bt->mgr->flag & 0x1) {
 		bt->mgr->flag = bt->mgr->flag & 0xe;
-		fprintf(stdout, "\nFirst root split after:\n");
 
+		fprintf(stdout, "\nFirst root split after - root:\n");
 		for (test = 1; test <= root->cnt; test++) {
 			ptr = keyptr(root, test);
 			fwrite(ptr->key, ptr->len, 1, stdout);
 			fputc('\n', stdout);
 		}
+
+		if (bt_lockpage(bt, new_page, BtLockRead, &page))
+			return bt->err;
+
+		fprintf(stdout, "\nFirst root split after - new page:\n");
+		for (test = 1; test <= page->cnt; test++) {
+			ptr = keyptr(page, test);
+			fwrite(ptr->key, ptr->len, 1, stdout);
+			fprintf(stdout, ", dead=%u", slotptr(page, test)->dead);
+			fputc('\n', stdout);
+		}
+
+		if (bt_unlockpage(bt, new_page, BtLockRead))
+			return bt->err;
 
 		fprintf(stdout, "-----------------------------------------------------\n");
 	}
@@ -1303,7 +1317,12 @@ BTERR bt_splitpage(BtDb *bt)
 	int test, hasfoster = 0;
 
 	// TODO: This is test code
-	if (bt->mgr->flag & 0x2 || bt->mgr->counter == 10 || page->foster > 0) {
+	if (bt->mgr->flag & 0x2 || ((bt->mgr->counter > 100) && (bt->mgr->flag & 0x4) && (lvl == 0)) || page->foster > 0) {
+		if((bt->mgr->counter > 100) && (bt->mgr->flag & 0x4) && (lvl == 0)) {
+			bt->mgr->flag = bt->mgr->flag | 0x8;
+			bt->mgr->flag = bt->mgr->flag & 0xb;
+		}
+
 		fprintf(stdout, "\nA normal split before:\n");
 		fprintf(stdout, "    cnt=%d\n", page->cnt);
 		fprintf(stdout, "    act=%d\n", page->act);
@@ -1393,6 +1412,7 @@ BTERR bt_splitpage(BtDb *bt)
 		memcpy((unsigned char *)page + nxt, key, key->len + 1);
 		memcpy(slotptr(page, ++idx)->id, slotptr(bt->frame, cnt)->id, BtId);
 		slotptr(page, idx)->tod = slotptr(bt->frame, cnt)->tod;
+		slotptr(page, idx)->dead = slotptr(bt->frame, cnt)->dead;
 		slotptr(page, idx)->off = nxt;
 		page->act++;
 	}
@@ -1526,8 +1546,12 @@ try_again:
 		return bt->err;
 
 	// TODO: This is test code
-	if (bt->mgr->flag & 0x2 || bt->mgr->counter == 10 || hasfoster) {
-		bt->mgr->flag = bt->mgr->flag & 0xd;
+	if (bt->mgr->flag & 0x2 || bt->mgr->flag & 0x8 || hasfoster) {
+		if(bt->mgr->flag & 0x2)
+			bt->mgr->flag = bt->mgr->flag & 0xd;
+
+		if(bt->mgr->flag & 0x8)
+			bt->mgr->flag = bt->mgr->flag & 0x7;
 
 		fprintf(stdout, "\nA normal split - page 1:\n");
 
@@ -1956,7 +1980,7 @@ int main(int argc, char **argv)
 	args = malloc(cnt * sizeof(ThreadArg));
 
 	mgr = bt_mgr((argv[1]), BT_rw, BITS, POOLSIZE, SEGSIZE);
-	mgr->flag = 0x3;
+	mgr->flag = 0x7;
 	mgr->counter = 0;
 
 	if (!mgr) {
