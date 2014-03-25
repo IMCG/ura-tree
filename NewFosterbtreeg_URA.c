@@ -93,6 +93,7 @@ typedef enum{
 typedef struct {
 	uint off : BT_maxbits;		// page offset for key start
 	uint dead : 1;				// set for deleted key
+	uint fence : 0;				// set for fence key
 	uint tod;					// time-stamp for key
 	unsigned char id[BtId];		// id associated with key
 } BtSlot;
@@ -492,6 +493,7 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize)
 	for (lvl = MIN_lvl; lvl--;) {
 #ifdef LOWFENCE
 		slotptr(alloc, 1)->off = mgr->page_size - 3;
+		slotptr(alloc, 1)->fence = 1;
 		bt_putid(slotptr(alloc, 1)->id, 0);		// No pages to the left of this
 		key = keyptr(alloc, 1);
 		key->len = 2;			// create starter key
@@ -499,6 +501,7 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize)
 		key->key[1] = 0x00;
 
 		slotptr(alloc, 2)->off = mgr->page_size - 6;
+		slotptr(alloc, 2)->fence = 1;
 		bt_putid(slotptr(alloc, 2)->id, lvl ? MIN_lvl - lvl + 1 : 0);		// next(lower) page number
 		key = keyptr(alloc, 2);
 		key->len = 2;			// create stopper key
@@ -1094,7 +1097,7 @@ uint bt_cleanpage(BtDb *bt, uint amt)
 	while (cnt++ < max) {
 		// always leave fence keys and foster children in list
 #ifdef LOWFENCE
-		if (((cnt < max - page->foster) || cnt == 1) && slotptr(bt->frame, cnt)->dead)
+		if (slotptr(bt->frame, cnt)->fence && slotptr(bt->frame, cnt)->dead)
 			continue;
 #else
 		if (cnt < max - page->foster && slotptr(bt->frame, cnt)->dead)
@@ -1130,6 +1133,8 @@ uint bt_cleanpage(BtDb *bt, uint amt)
 
 void bt_addkeytopage(BtDb *bt, uint slot, unsigned char *key, uint len, uid id, uint tod)
 {
+	// TODO: Check if this ever overwrites fence keys
+
 	BtPage page = bt->page;
 	uint idx;
 
@@ -1221,6 +1226,7 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 	memcpy((unsigned char *)root + nxt, starter, *starter + 1);
 	bt_putid(slotptr(root, 1)->id, 0);
 	slotptr(root, 1)->off = nxt;
+	slotptr(root, 1)->fence = 1;
 
 	// Insert key on newroot page
 	nxt -= *fencekey + 1;
@@ -1235,6 +1241,7 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 	fencekey[2] = 0xff;
 	memcpy((unsigned char *)root + nxt, fencekey, *fencekey + 1);
 	bt_putid(slotptr(root, 3)->id, right);
+	slotptr(root, 3)->off = nxt;
 	slotptr(root, 3)->off = nxt;
 
 	// Increase root height
@@ -1285,7 +1292,7 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 		for (test = 1; test <= page->cnt; test++) {
 			ptr = keyptr(page, test);
 			fwrite(ptr->key, ptr->len, 1, stdout);
-			fprintf(stdout, ", dead=%u", slotptr(page, test)->dead);
+			fprintf(stdout, ", fence=%u", slotptr(page, test)->fence);
 			fputc('\n', stdout);
 		}
 
@@ -1334,7 +1341,7 @@ BTERR bt_splitpage(BtDb *bt)
 		for (test = 1; test <= page->cnt; test++) {
 			ptr = keyptr(page, test);
 			fwrite(ptr->key, ptr->len, 1, stdout);
-			fprintf(stdout, ", dead=%u", slotptr(page, test)->dead);
+			fprintf(stdout, ", fence=%u", slotptr(page, test)->fence);
 			fputc('\n', stdout);
 		}
 	}
@@ -1351,14 +1358,14 @@ BTERR bt_splitpage(BtDb *bt)
 	//	leaving foster children in the left node.
 
 #ifdef LOWFENCE
-	// Include what will be fence key but mark as dead
+	// Include what will be fence key
 	key = keyptr(page, cnt);
 	nxt -= key->len + 1;
 	memcpy((unsigned char *)bt->frame + nxt, key, key->len + 1);
 	memcpy(slotptr(bt->frame, ++idx)->id, slotptr(page, cnt)->id, BtId);
 	slotptr(bt->frame, idx)->tod = slotptr(page, cnt)->tod;
 	slotptr(bt->frame, idx)->off = nxt;
-	slotptr(bt->frame, idx)->dead = 1;
+	slotptr(bt->frame, idx)->fence = 1;
 #endif
 
 	while (cnt++ < max) {
@@ -1370,6 +1377,11 @@ BTERR bt_splitpage(BtDb *bt)
 		slotptr(bt->frame, idx)->off = nxt;
 		bt->frame->act++;
 	}
+
+#ifdef LOWFENCE
+	// Mark high fence key
+	slotptr(bt->frame, idx)->fence = 1;
+#endif
 
 	// transfer right link node
 
@@ -1412,10 +1424,15 @@ BTERR bt_splitpage(BtDb *bt)
 		memcpy((unsigned char *)page + nxt, key, key->len + 1);
 		memcpy(slotptr(page, ++idx)->id, slotptr(bt->frame, cnt)->id, BtId);
 		slotptr(page, idx)->tod = slotptr(bt->frame, cnt)->tod;
-		slotptr(page, idx)->dead = slotptr(bt->frame, cnt)->dead;
 		slotptr(page, idx)->off = nxt;
 		page->act++;
 	}
+
+#ifdef LOWFENCE
+	// Mark fence keys
+	slotptr(page, 1)->fence = 1;
+	slotptr(page, idx)->fence = 1;
+#endif
 
 	//	insert new foster child at beginning of the current foster children
 	nxt -= *fencekey + 1;
@@ -1558,7 +1575,7 @@ try_again:
 		for (test = 1; test <= page->cnt; test++) {
 			ptr = keyptr(page, test);
 			fwrite(ptr->key, ptr->len, 1, stdout);
-			fprintf(stdout, ", dead=%u", slotptr(page, test)->dead);
+			fprintf(stdout, ", fence=%u", slotptr(page, test)->fence);
 			fputc('\n', stdout);
 		}
 
@@ -1569,7 +1586,7 @@ try_again:
 		for (test = 1; test <= page->cnt; test++) {
 			ptr = keyptr(page, test);
 			fwrite(ptr->key, ptr->len, 1, stdout);
-			fprintf(stdout, ", dead=%u", slotptr(page, test)->dead);
+			fprintf(stdout, ", fence=%u", slotptr(page, test)->fence);
 			fputc('\n', stdout);
 		}
 
@@ -1581,7 +1598,7 @@ try_again:
 		for (test = 1; test <= bt->page->cnt; test++) {
 			ptr = keyptr(bt->page, test);
 			fwrite(ptr->key, ptr->len, 1, stdout);
-			fprintf(stdout, ", dead=%u", slotptr(bt->page, test)->dead);
+			fprintf(stdout, ", fence=%u", slotptr(bt->page, test)->fence);
 			fputc('\n', stdout);
 		}
 
