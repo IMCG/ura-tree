@@ -33,7 +33,6 @@ REDISTRIBUTION OF THIS SOFTWARE.
 #define MAXTHREADS 32
 
 #define _GNU_SOURCE
-#define LOWFENCE
 
 #include <unistd.h>
 #include <stdio.h>
@@ -93,7 +92,7 @@ typedef enum{
 typedef struct {
 	uint off : BT_maxbits;		// page offset for key start
 	uint dead : 1;				// set for deleted key
-	uint fence : 0;				// set for fence key
+	uint fence : 1;				// set for fence key
 	uint tod;					// time-stamp for key
 	unsigned char id[BtId];		// id associated with key
 } BtSlot;
@@ -170,6 +169,10 @@ typedef struct {
 	// Test vars, remove this
 	int flag;
 	int counter;
+	unsigned long long lowfenceoverwrite[MAXTHREADS];
+	unsigned long long highfenceoverwrite[MAXTHREADS];
+	unsigned long long optimisticfail[MAXTHREADS];
+	unsigned long long optimisticsuccess[MAXTHREADS];
 } BtMgr;
 
 typedef struct {
@@ -458,6 +461,10 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize)
 		mgr->writelockaquired[i] = 0;
 		mgr->readlockfail[i] = 0;
 		mgr->writelockfail[i] = 0;
+		mgr->lowfenceoverwrite[i] = 0;
+		mgr->highfenceoverwrite[i] = 0;
+		mgr->optimisticfail[i] = 0;
+		mgr->optimisticsuccess[i] = 0;
 	}
 
 	//  mask for logical memory pools
@@ -491,7 +498,6 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize)
 	alloc->bits = mgr->page_bits;
 
 	for (lvl = MIN_lvl; lvl--;) {
-#ifdef LOWFENCE
 		slotptr(alloc, 1)->off = mgr->page_size - 3;
 		slotptr(alloc, 1)->fence = 1;
 		bt_putid(slotptr(alloc, 1)->id, 0);		// No pages to the left of this
@@ -512,19 +518,6 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize)
 		alloc->lvl = lvl;
 		alloc->cnt = 2;
 		alloc->act = 2;
-#else
-		slotptr(alloc, 1)->off = mgr->page_size - 3;
-		bt_putid(slotptr(alloc, 1)->id, lvl ? MIN_lvl - lvl + 1 : 0);		// next(lower) page number
-		key = keyptr(alloc, 1);
-		key->len = 2;			// create stopper key
-		key->key[0] = 0xff;
-		key->key[1] = 0xff;
-		alloc->min = mgr->page_size - 3;
-		alloc->lvl = lvl;
-		alloc->cnt = 1;
-		alloc->act = 1;
-#endif
-
 
 		memcpy((mgr->buffer + offset), alloc, mgr->page_size);
 		offset += mgr->page_size;
@@ -599,6 +592,28 @@ char *bt_findpool(BtDb *bt, uid page_no)
 	pool_ptr = bt->mgr->buffer + off;
 
 	return pool_ptr;
+}
+
+// Save a page to a pointer
+
+BTERR bt_savepage(BtDb *bt, uid page_no, BtPage *pageptr) {
+	char *pool_ptr;
+	uint subpage;
+	BtPage page;
+
+	//	find pool start
+	if (pool_ptr = bt_findpool(bt, page_no))
+		subpage = (uint)(page_no & bt->mgr->poolmask); // page within mapping
+	else {
+		return bt->err;
+	}
+
+	page = (BtPage)(pool_ptr + (subpage << bt->mgr->page_bits));
+
+	if (pageptr)
+		*pageptr = page;
+
+	return bt->err = 0;
 }
 
 // place write, read, or parent lock on requested page_no.
@@ -838,6 +853,8 @@ int bt_loadpage(BtDb *bt, unsigned char *key, uint len, uint lvl, uint lock)
 	uint drill = 0xff, slot;
 	uint mode, prevmode;
 
+	bt->mgr->optimisticfail[bt->thread_id]++;
+
 	//  start at root of btree and drill down
 
 	do {
@@ -931,6 +948,91 @@ int bt_loadpage(BtDb *bt, unsigned char *key, uint len, uint lvl, uint lock)
 	return 0;	// return error
 }
 
+// Optimistic version of loadpage
+// falls back on original method if it fails
+
+int bt_optimisticloadpage(BtDb *bt, unsigned char *key, uint len, uint lvl, uint lock)
+{
+	uid page_no = ROOT_page;
+	uint drill = 0xff, slot;
+	uint mode;
+
+	//  start at root of btree and drill down
+
+	do {
+		// determine lock mode of drill level
+		mode = (lock == BtLockWrite) && (drill == lvl) ? BtLockWrite : BtLockRead;
+
+		bt->page_no = page_no;
+
+		// obtain page without locks
+		if (bt_savepage(bt, page_no, &bt->page))
+			return bt_loadpage(bt, key, len, lvl, loc);
+
+		// re-read and re-lock root after determining actual level of root
+
+		if (bt->page_no == ROOT_page)
+		if (bt->page->lvl != drill) {
+			drill = bt->page->lvl;
+
+			if (lock == BtLockWrite && drill == lvl)
+				continue;
+		}
+
+		//	if page is being deleted,
+		//	move back to preceeding page
+
+		if (bt->page->kill) {
+			page_no = bt_getid(bt->page->right);
+			continue;
+		}
+
+		//  find key on page at this level
+		//  and descend to requested level
+
+		slot = bt_findslot(bt, key, len);
+
+		//	is this slot a foster child?
+
+		if (slot <= bt->page->cnt - bt->page->foster)
+		if (drill == lvl) {
+			// We think this is right, so finally lock it and double check
+			if (bt_lockpage(bt, page_no, mode, &bt->page))
+				return bt_loadpage(bt, key, len, lvl, loc);
+
+			// Check fence keys to see if it is possible to be here
+			if (keycmp(keyptr(bt->page, 1), key, len) > 0)
+				return bt_loadpage(bt, key, len, lvl, loc);
+			if (keycmp(keyptr(bt->page, (bt->page->cnt - bt->page->foster)), key, len) < 0)
+				return bt_loadpage(bt, key, len, lvl, loc);
+
+			bt->mgr->optimisticsuccess[bt->thread_id]++;
+			return bt_findslot(bt, key, len);
+		}
+
+		while (slotptr(bt->page, slot)->dead)
+		if (slot++ < bt->page->cnt)
+			continue;
+		else
+			goto slideright;
+
+		if (slot <= bt->page->cnt - bt->page->foster)
+			drill--;
+
+		//  continue down / right using overlapping locks
+		//  to protect pages being killed or split.
+
+		page_no = bt_getid(slotptr(bt->page, slot)->id);
+		continue;
+
+	slideright:
+		page_no = bt_getid(bt->page->right);
+
+	} while (page_no);
+
+	return bt_loadpage(bt, key, len, lvl, loc);	// fall back on other search
+}
+
 //  find and delete key on page by marking delete flag bit
 //  when page becomes empty, delete it from the btree
 
@@ -942,7 +1044,7 @@ BTERR bt_deletekey(BtDb *bt, unsigned char *key, uint len, uint lvl)
 	uint slot, tod;
 	BtKey ptr;
 
-	if (slot = bt_loadpage(bt, key, len, lvl, BtLockWrite))
+	if (slot = bt_optimisticloadpage(bt, key, len, lvl, BtLockWrite))
 		ptr = keyptr(bt->page, slot);
 	else
 		return bt->err;
@@ -1006,7 +1108,7 @@ BTERR bt_deletekey(BtDb *bt, unsigned char *key, uint len, uint lvl)
 
 	//  redirect higher key directly to consolidated node
 
-	if (slot = bt_loadpage(bt, rightkey + 1, *rightkey, lvl + 1, BtLockWrite))
+	if (slot = bt_optimisticloadpage(bt, rightkey + 1, *rightkey, lvl + 1, BtLockWrite))
 		ptr = keyptr(bt->page, slot);
 	else
 		return bt->err;
@@ -1044,7 +1146,7 @@ uid bt_findkey(BtDb *bt, unsigned char *key, uint len)
 	BtKey ptr;
 	uid id;
 
-	if (slot = bt_loadpage(bt, key, len, 0, BtLockRead))
+	if (slot = bt_optimisticloadpage(bt, key, len, 0, BtLockRead))
 		ptr = keyptr(bt->page, slot);
 	else
 		return 0;
@@ -1096,13 +1198,8 @@ uint bt_cleanpage(BtDb *bt, uint amt)
 
 	while (cnt++ < max) {
 		// always leave fence keys and foster children in list
-#ifdef LOWFENCE
 		if (slotptr(bt->frame, cnt)->fence && slotptr(bt->frame, cnt)->dead)
 			continue;
-#else
-		if (cnt < max - page->foster && slotptr(bt->frame, cnt)->dead)
-			continue;
-#endif
 
 		// copy key
 		key = keyptr(bt->frame, cnt);
@@ -1133,10 +1230,13 @@ uint bt_cleanpage(BtDb *bt, uint amt)
 
 void bt_addkeytopage(BtDb *bt, uint slot, unsigned char *key, uint len, uid id, uint tod)
 {
-	// TODO: Check if this ever overwrites fence keys
-
 	BtPage page = bt->page;
 	uint idx;
+
+	if (slot == 1)
+		bt->mgr->lowfenceoverwrite[bt->thread_id]++;
+	if (slot == page->cnt - page->foster)
+		bt->mgr->highfenceoverwrite[bt->thread_id]++;
 
 	// calculate next available slot and copy key into page
 
@@ -1172,11 +1272,8 @@ void bt_addkeytopage(BtDb *bt, uint slot, unsigned char *key, uint len, uid id, 
 BTERR bt_splitroot(BtDb *bt, uid right)
 {
 	uint nxt = bt->mgr->page_size;
-#ifdef LOWFENCE
 	unsigned char fencekey[256], starter[256];
-#else
-	unsigned char fencekey[256];
-#endif
+
 	BtPage root = bt->page, page;
 	uid new_page;
 	BtKey key, ptr;
@@ -1217,7 +1314,6 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 
 	// insert left fence key on empty newroot page
 
-#ifdef LOWFENCE
 	// Insert starter key on newroot page
 	nxt -= 3;
 	starter[0] = 2;
@@ -1250,29 +1346,6 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 	root->cnt = 3;
 	root->act = 3;
 	root->lvl++;
-#else
-	nxt -= *fencekey + 1;
-	memcpy((unsigned char *)root + nxt, fencekey, *fencekey + 1);
-	bt_putid(slotptr(root, 1)->id, new_page);
-	slotptr(root, 1)->off = nxt;
-
-	// insert stopper key on newroot page
-	// and increase the root height
-
-	nxt -= 3;
-	fencekey[0] = 2;
-	fencekey[1] = 0xff;
-	fencekey[2] = 0xff;
-	memcpy((unsigned char *)root + nxt, fencekey, *fencekey + 1);
-	bt_putid(slotptr(root, 2)->id, right);
-	slotptr(root, 2)->off = nxt;
-
-	bt_putid(root->right, 0);
-	root->min = nxt;		// reset lowest used offset and key count
-	root->cnt = 2;
-	root->act = 2;
-	root->lvl++;
-#endif
 
 	// TODO: This is test code
 	if (bt->mgr->flag & 0x1) {
@@ -1357,7 +1430,6 @@ BTERR bt_splitpage(BtDb *bt)
 	//  split higher half of keys to bt->frame
 	//	leaving foster children in the left node.
 
-#ifdef LOWFENCE
 	// Include what will be fence key
 	key = keyptr(page, cnt);
 	nxt -= key->len + 1;
@@ -1366,7 +1438,6 @@ BTERR bt_splitpage(BtDb *bt)
 	slotptr(bt->frame, idx)->tod = slotptr(page, cnt)->tod;
 	slotptr(bt->frame, idx)->off = nxt;
 	slotptr(bt->frame, idx)->fence = 1;
-#endif
 
 	while (cnt++ < max) {
 		key = keyptr(page, cnt);
@@ -1378,10 +1449,8 @@ BTERR bt_splitpage(BtDb *bt)
 		bt->frame->act++;
 	}
 
-#ifdef LOWFENCE
 	// Mark high fence key
 	slotptr(bt->frame, idx)->fence = 1;
-#endif
 
 	// transfer right link node
 
@@ -1428,11 +1497,9 @@ BTERR bt_splitpage(BtDb *bt)
 		page->act++;
 	}
 
-#ifdef LOWFENCE
 	// Mark fence keys
 	slotptr(page, 1)->fence = 1;
 	slotptr(page, idx)->fence = 1;
-#endif
 
 	//	insert new foster child at beginning of the current foster children
 	nxt -= *fencekey + 1;
@@ -1495,7 +1562,7 @@ BTERR bt_splitpage(BtDb *bt)
 try_again:
 
 	do {
-		slot = bt_loadpage(bt, fencekey + 1, *fencekey, lvl + 1, BtLockWrite);
+		slot = bt_optimisticloadpage(bt, fencekey + 1, *fencekey, lvl + 1, BtLockWrite);
 
 		if (!slot)
 			return bt->err;
@@ -1620,7 +1687,7 @@ BTERR bt_insertkey(BtDb *bt, unsigned char *key, uint len, uid id, uint tod)
 	BtKey ptr;
 
 	while (1) {
-		if (slot = bt_loadpage(bt, key, len, 0, BtLockWrite)) {
+		if (slot = bt_optimisticloadpage(bt, key, len, 0, BtLockWrite)) {
 			ptr = keyptr(bt->page, slot);
 		}
 		else
@@ -1662,7 +1729,7 @@ uint bt_startkey(BtDb *bt, unsigned char *key, uint len)
 	uint slot;
 	
 	// cache page for retrieval
-	if (slot = bt_loadpage(bt, key, len, 0, BtLockRead))
+	if (slot = bt_optimisticloadpage(bt, key, len, 0, BtLockRead))
 		memcpy(bt->cursor, bt->page, bt->mgr->page_size);
 	bt->cursor_page = bt->page_no;
 	if (bt_unlockpage(bt, bt->page_no, BtLockRead))
@@ -1858,7 +1925,7 @@ void *index_file(void *arg)
 			fprintf(stdout, "Key not found\n");
 		}
 
-		if (slot = bt_loadpage(bt, "voluntary", 9, 0, BtLockRead)) {
+		if (slot = bt_optimisticloadpage(bt, "voluntary", 9, 0, BtLockRead)) {
 			fprintf(stdout, "Found the slot: %d\n", slot);
 			ptr = keyptr(bt->page, slot);
 			fwrite(ptr->key, ptr->len, 1, stdout);
@@ -1932,7 +1999,7 @@ void *index_file(void *arg)
 			fprintf(stdout, "Key not found\n");
 		}
 
-		if (slot = bt_loadpage(bt, args->ctx_string, args->ctx_num, 0, BtLockRead)) {
+		if (slot = bt_optimisticloadpage(bt, args->ctx_string, args->ctx_num, 0, BtLockRead)) {
 			fprintf(stdout, "Found the slot: %d\n", slot);
 			ptr = keyptr(bt->page, slot);
 			fwrite(ptr->key, ptr->len, 1, stdout);
@@ -2059,6 +2126,23 @@ int main(int argc, char **argv)
 			fprintf(stdout, "%d,%.2f,%d,%.2f,%.2f,%llu,%llu,%llu,%llu\n", cnt, (real_time / 1000), idx, (double)(mgr->readlockwait[idx] / getTicksPerNano()),
 				(double)(mgr->writelockwait[idx] / getTicksPerNano()), mgr->readlockaquired[idx], mgr->writelockaquired[idx], mgr->readlockfail[idx], mgr->writelockfail[idx]);
 		}
+	}
+
+	fprintf(stdout, " Low fence overwrites:\n");
+	for (idx = 0; idx < cnt; idx++) {
+		fprintf(stdout, "     Thread %d - %llu times\n", idx, mgr->lowfenceoverwrite[cnt]);
+	}
+	fprintf(stdout, " High fence overwrites:\n");
+	for (idx = 0; idx < cnt; idx++) {
+		fprintf(stdout, "     Thread %d - %llu times\n", idx, mgr->highfenceoverwrite[cnt]);
+	}
+	fprintf(stdout, " Optimistic search failures:\n");
+	for (idx = 0; idx < cnt; idx++) {
+		fprintf(stdout, "     Thread %d - %llu times\n", idx, mgr->optimisticfail[cnt]);
+	}
+	fprintf(stdout, " Optimistic search successes:\n");
+	for (idx = 0; idx < cnt; idx++) {
+		fprintf(stdout, "     Thread %d - %llu times\n", idx, mgr->optimisticsuccess[cnt]);
 	}
 
 	bt_mgrclose(mgr);
