@@ -23,6 +23,7 @@ REDISTRIBUTION OF THIS SOFTWARE.
 
 #define _FILE_OFFSET_BITS 64
 #define _LARGEFILE64_SOURCE
+#define VERIFY
 
 // Constants
 #define BITS 12//14
@@ -846,7 +847,6 @@ int bt_findslot(BtDb *bt, unsigned char *key, uint len)
 //  find and load page at given level for given key
 //	leave page rd or wr locked as requested
 
-// FIXME: Don't return fence slot
 int bt_loadpage(BtDb *bt, unsigned char *key, uint len, uint lvl, uint lock)
 {
 	uid page_no = ROOT_page, prevpage = 0;
@@ -953,9 +953,9 @@ int bt_loadpage(BtDb *bt, unsigned char *key, uint len, uint lvl, uint lock)
 
 int bt_optimisticloadpage(BtDb *bt, unsigned char *key, uint len, uint lvl, uint lock)
 {
-	uid page_no = ROOT_page;
+	uid page_no = ROOT_page, prevpage = 0;
 	uint drill = 0xff, slot;
-	uint mode;
+	uint mode, prevmode;
 
 	//  start at root of btree and drill down
 
@@ -965,9 +965,16 @@ int bt_optimisticloadpage(BtDb *bt, unsigned char *key, uint len, uint lvl, uint
 
 		bt->page_no = page_no;
 
-		// obtain page without locks
-		if (bt_savepage(bt, page_no, &bt->page))
-			return bt_loadpage(bt, key, len, lvl, loc);
+		// Immediately let go of previous lock, if any
+		if (prevpage)
+		if (bt_unlockpage(bt, prevpage, prevmode))
+			return 0;
+		else
+			prevpage = 0;
+
+		// Lock page
+		if (bt_lockpage(bt, page_no, mode, &bt->page))
+			return 0;
 
 		// re-read and re-lock root after determining actual level of root
 
@@ -976,8 +983,14 @@ int bt_optimisticloadpage(BtDb *bt, unsigned char *key, uint len, uint lvl, uint
 			drill = bt->page->lvl;
 
 			if (lock == BtLockWrite && drill == lvl)
+			if (bt_unlockpage(bt, page_no, mode))
+				return 0;
+			else
 				continue;
 		}
+
+		prevpage = bt->page_no;
+		prevmode = mode;
 
 		//	if page is being deleted,
 		//	move back to preceeding page
@@ -996,18 +1009,16 @@ int bt_optimisticloadpage(BtDb *bt, unsigned char *key, uint len, uint lvl, uint
 
 		if (slot <= bt->page->cnt - bt->page->foster)
 		if (drill == lvl) {
-			// We think this is right, so finally lock it and double check
-			if (bt_lockpage(bt, page_no, mode, &bt->page))
-				return bt_loadpage(bt, key, len, lvl, loc);
-
+			// We think this is right, so double check
 			// Check fence keys to see if it is possible to be here
-			if (keycmp(keyptr(bt->page, 1), key, len) > 0)
-				return bt_loadpage(bt, key, len, lvl, loc);
-			if (keycmp(keyptr(bt->page, (bt->page->cnt - bt->page->foster)), key, len) < 0)
-				return bt_loadpage(bt, key, len, lvl, loc);
+			if ((keycmp(keyptr(bt->page, 1), key, len) > 0) || (keycmp(keyptr(bt->page, (bt->page->cnt - bt->page->foster)), key, len) < 0))
+			if (bt_unlockpage(bt, page_no, mode))
+				return 0;
+			else
+				return bt_loadpage(bt, key, len, lvl, lock);
 
 			bt->mgr->optimisticsuccess[bt->thread_id]++;
-			return bt_findslot(bt, key, len);
+			return slot;
 		}
 
 		while (slotptr(bt->page, slot)->dead)
@@ -1019,8 +1030,7 @@ int bt_optimisticloadpage(BtDb *bt, unsigned char *key, uint len, uint lvl, uint
 		if (slot <= bt->page->cnt - bt->page->foster)
 			drill--;
 
-		//  continue down / right using overlapping locks
-		//  to protect pages being killed or split.
+		//  continue down right without overlapping locks
 
 		page_no = bt_getid(slotptr(bt->page, slot)->id);
 		continue;
@@ -1030,7 +1040,12 @@ int bt_optimisticloadpage(BtDb *bt, unsigned char *key, uint len, uint lvl, uint
 
 	} while (page_no);
 
-	return bt_loadpage(bt, key, len, lvl, loc);	// fall back on other search
+	// Immediately let go of any remaing locks
+	if (prevpage)
+	if (bt_unlockpage(bt, prevpage, prevmode))
+		return 0;
+	else
+		return bt_loadpage(bt, key, len, lvl, lock);	// fall back on other search
 }
 
 //  find and delete key on page by marking delete flag bit
@@ -1279,6 +1294,7 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 	BtKey key, ptr;
 	int test;
 
+#ifdef VERIFY
 	// TODO: This is testing/debugging code
 	if (bt->mgr->flag & 0x1) {
 		fprintf(stdout, "\nFirst root split before:\n");
@@ -1289,6 +1305,7 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 			fputc('\n', stdout);
 		}
 	}
+#endif
 
 	//  Obtain an empty page to use, and copy the left page
 	//  contents into it from the root.  Strip foster child key.
@@ -1347,6 +1364,7 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 	root->act = 3;
 	root->lvl++;
 
+#ifdef VERIFY
 	// TODO: This is test code
 	if (bt->mgr->flag & 0x1) {
 		bt->mgr->flag = bt->mgr->flag & 0xe;
@@ -1374,6 +1392,7 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 
 		fprintf(stdout, "-----------------------------------------------------\n");
 	}
+#endif
 
 	// release root (bt->page)
 
@@ -1396,6 +1415,7 @@ BTERR bt_splitpage(BtDb *bt)
 	BtKey key, ptr;
 	int test, hasfoster = 0;
 
+#ifdef VERIFY
 	// TODO: This is test code
 	if (bt->mgr->flag & 0x2 || ((bt->mgr->counter > 100) && (bt->mgr->flag & 0x4) && (lvl == 0)) || page->foster > 0) {
 		if((bt->mgr->counter > 100) && (bt->mgr->flag & 0x4) && (lvl == 0)) {
@@ -1418,6 +1438,7 @@ BTERR bt_splitpage(BtDb *bt)
 			fputc('\n', stdout);
 		}
 	}
+#endif
 
 	//	initialize frame buffer
 
@@ -1629,6 +1650,7 @@ try_again:
 	if (bt_unlockpage(bt, page_no, BtLockParent))
 		return bt->err;
 
+#ifdef VERIFY
 	// TODO: This is test code
 	if (bt->mgr->flag & 0x2 || bt->mgr->flag & 0x8 || hasfoster) {
 		if(bt->mgr->flag & 0x2)
@@ -1672,6 +1694,7 @@ try_again:
 		fprintf(stdout, "-----------------------------------------------------\n");
 		
 	}
+#endif
 	bt->mgr->counter++;
 
 	//return bt_unlockpage(bt, page_no, BtLockParent);
@@ -2130,19 +2153,19 @@ int main(int argc, char **argv)
 
 	fprintf(stdout, " Low fence overwrites:\n");
 	for (idx = 0; idx < cnt; idx++) {
-		fprintf(stdout, "     Thread %d - %llu times\n", idx, mgr->lowfenceoverwrite[cnt]);
+		fprintf(stdout, "     Thread %d - %llu times\n", idx, mgr->lowfenceoverwrite[idx]);
 	}
 	fprintf(stdout, " High fence overwrites:\n");
 	for (idx = 0; idx < cnt; idx++) {
-		fprintf(stdout, "     Thread %d - %llu times\n", idx, mgr->highfenceoverwrite[cnt]);
+		fprintf(stdout, "     Thread %d - %llu times\n", idx, mgr->highfenceoverwrite[idx]);
 	}
 	fprintf(stdout, " Optimistic search failures:\n");
 	for (idx = 0; idx < cnt; idx++) {
-		fprintf(stdout, "     Thread %d - %llu times\n", idx, mgr->optimisticfail[cnt]);
+		fprintf(stdout, "     Thread %d - %llu times\n", idx, mgr->optimisticfail[idx]);
 	}
 	fprintf(stdout, " Optimistic search successes:\n");
 	for (idx = 0; idx < cnt; idx++) {
-		fprintf(stdout, "     Thread %d - %llu times\n", idx, mgr->optimisticsuccess[cnt]);
+		fprintf(stdout, "     Thread %d - %llu times\n", idx, mgr->optimisticsuccess[idx]);
 	}
 
 	bt_mgrclose(mgr);
