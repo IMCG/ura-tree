@@ -1927,7 +1927,7 @@ void *index_file(void *arg)
 		}
 
 		/* free the memory we used for the buffer */
-		free(fileBuffer);
+		//free(fileBuffer);
 
 		fprintf(stdout, "finished %s for %d keys\n", args->ctx_string, line);
 		/*
@@ -1969,16 +1969,23 @@ void *index_file(void *arg)
 
 		fprintf(stdout, "Finished reading %d keys\n", line);
 
-        fprintf(stdout, "Deleting first page");
-        bt_deletekey(bt, "Amigo", 5, 0);
-        bt_deletekey(bt, "Bubbles", 7, 0);
-        bt_deletekey(bt, "Celery", 6, 0);
-        bt_deletekey(bt, "Dingo", 5, 0);
-        bt_deletekey(bt, "Edgar", 5, 0);
-        bt_deletekey(bt, "Faffingabout", 12, 0);
-        bt_deletekey(bt, "Geoffery", 8, 0);
-        bt_deletekey(bt, "Highgarden", 10, 0);
-        bt_deletekey(bt, "Iamsam", 6, 0);
+        fprintf(stdout, "Delete everything\n");
+        numchars = line = 0;
+		while (numchars < numbytes) {
+			line++;
+			len = 0;
+
+			ch[0] = '\0';
+			while (ch[0] != '\n') {
+				memcpy(ch, fileBuffer + numchars + len, 1);
+				len += 1;
+			}
+			memcpy(key, fileBuffer + numchars, len - 1);
+			numchars += len;
+
+                if (bt_deletekey(bt, key, (len-1), 0))
+				    fprintf(stderr, "Error %d Line: %d\n", bt->err, line), exit(0);
+		}
 
         fprintf(stdout, "started reading again\n");
 
@@ -1997,6 +2004,44 @@ void *index_file(void *arg)
 		}
 
         fprintf(stdout, "Finished reading %d keys\n", line);
+
+        fprintf(stdout, "Re-Insert everything\n");
+        numchars = line = 0;
+		while (numchars < numbytes) {
+			line++;
+			len = 0;
+
+			ch[0] = '\0';
+			while (ch[0] != '\n') {
+				memcpy(ch, fileBuffer + numchars + len, 1);
+				len += 1;
+			}
+			memcpy(key, fileBuffer + numchars, len - 1);
+			numchars += len;
+
+                if (bt_insertkey(bt, key, (len-1), line, *tod))
+				fprintf(stderr, "Error %d Line: %d\n", bt->err, line), exit(0);
+		}
+
+        fprintf(stdout, "started reading\n");
+
+        line = len = key[0] = 0;
+		if (slot = bt_startkey(bt, key, len))
+			slot--;
+		else
+			fprintf(stderr, "Error %d in StartKey. Syserror: %d\n", bt->err, errno), exit(0);
+
+		line++;
+		while (slot = bt_nextkey(bt, slot)) {
+			ptr = bt_key(bt, slot);
+			line++;
+			fwrite(ptr->key, ptr->len, 1, stdout);
+            fprintf(stdout, ", dead=%d", slotptr(bt->cursor, slot)->dead);
+			fputc('\n', stdout);
+		}
+
+		fprintf(stdout, "Finished reading %d keys\n", line);
+
 		/*
 		if (rowid = bt_findkey(bt, "voluntary", 9)) {
 			fprintf(stdout, "Found the key in row: %d\n", rowid);
