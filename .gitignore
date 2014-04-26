@@ -2,3 +2,5 @@
 *.obj
 *.exe
 Originals/*
+.DS_STORE
+*.swp
