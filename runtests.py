@@ -2,6 +2,7 @@ import argparse
 import sys
 import subprocess
 import os.path
+import os
 
 def checkfiles(fileroot, filetype, threadnum):
     #Check existence of files
@@ -47,6 +48,7 @@ filename = args.outfile + '.csv'
 out = open(filename, 'w')
 out.write('Type,Threads,Total-Time,Thread-Id,Root-Read-Wait,Root-Write-Wait,Readlock-Wait,Writelock-wait,Readlock-Aquired,Writelock-Aquired,Readlock-Failed,Writelock-Failed,LowFence-Overwrites,Optimistic-Successes,Optimistic-Failures\n')
 FILE_ROOT = os.path.abspath(os.path.dirname(__file__))
+os.chdir(FILE_ROOT)
 
 # Run tests for different threads
 while(thread <= endthread):
@@ -55,7 +57,7 @@ while(thread <= endthread):
             #Execute command and write to file
             #print buildcommand("skew", thread) 
             out.write('skew,')
-            out.write(str(subprocess.check_output(buildcommand("skew", thread))))
+            out.write(str(subprocess.check_output(buildcommand("skew", thread).split())))
             out.write('\n')
             
     
@@ -65,7 +67,7 @@ while(thread <= endthread):
             # Execute command and write to file
             #print buildcommand("sorted", thread)
             out.write('sorted,')
-            out.write(str(subprocess.check_output(buildcommand("sorted", thread))))
+            out.write(str(subprocess.check_output(buildcommand("sorted", thread).split())))
             out.write('\n')            
 
     thread *= 2
