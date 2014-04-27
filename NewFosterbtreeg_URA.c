@@ -521,7 +521,7 @@ BtMgr *bt_mgr(char *name, uint mode, uint bits, uint poolmax, uint segsize)
 		alloc->min = mgr->page_size - 6;
 		alloc->lvl = lvl;
 		alloc->cnt = 2;
-		alloc->act = 2;
+		alloc->act = 1;
 
 		memcpy((mgr->buffer + offset), alloc, mgr->page_size);
 		offset += mgr->page_size;
@@ -1386,7 +1386,7 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 	bt_putid(root->right, 0);
 	root->min = nxt;		// reset lowest used offset and key count
 	root->cnt = 3;
-	root->act = 3;
+	root->act = 2;
 	root->lvl++;
 
 #ifdef VERIFY
@@ -1486,7 +1486,6 @@ BTERR bt_splitpage(BtDb *bt)
 	slotptr(bt->frame, idx)->off = nxt;
 	slotptr(bt->frame, idx)->fence = 1;
     slotptr(bt->frame, idx)->dead = 1;
-    bt->frame->act++;
 
 	while (cnt++ < max) {
 		key = keyptr(page, cnt);
@@ -1549,6 +1548,7 @@ BTERR bt_splitpage(BtDb *bt)
 	// Mark fence keys
 	slotptr(page, 1)->fence = 1;
     slotptr(page, 1)->dead = 1;
+    page->act--;
 	slotptr(page, idx)->fence = 1;
 
 	//	insert new foster child at beginning of the current foster children
@@ -1927,7 +1927,7 @@ void *index_file(void *arg)
 		}
 
 		/* free the memory we used for the buffer */
-		//free(fileBuffer);
+		free(fileBuffer);
 
 		fprintf(stdout, "finished %s for %d keys\n", args->ctx_string, line);
 		/*
@@ -1950,6 +1950,7 @@ void *index_file(void *arg)
 		if (bt_unlockpage(bt, ROOT_page, BtLockRead))
 			return 0;
 		*/
+        /*
 		fprintf(stdout, "started reading\n");
 
         line = len = key[0] = 0;
@@ -1968,80 +1969,7 @@ void *index_file(void *arg)
 		}
 
 		fprintf(stdout, "Finished reading %d keys\n", line);
-
-        fprintf(stdout, "Delete everything\n");
-        numchars = line = 0;
-		while (numchars < numbytes) {
-			line++;
-			len = 0;
-
-			ch[0] = '\0';
-			while (ch[0] != '\n') {
-				memcpy(ch, fileBuffer + numchars + len, 1);
-				len += 1;
-			}
-			memcpy(key, fileBuffer + numchars, len - 1);
-			numchars += len;
-
-                if (bt_deletekey(bt, key, (len-1), 0))
-				    fprintf(stderr, "Error %d Line: %d\n", bt->err, line), exit(0);
-		}
-
-        fprintf(stdout, "started reading again\n");
-
-        line = len = key[0] = 0;
-		if (slot = bt_startkey(bt, key, len))
-			slot--;
-		else
-			fprintf(stderr, "Error %d in StartKey. Syserror: %d\n", bt->err, errno), exit(0);
-
-		line++;
-		while (slot = bt_nextkey(bt, slot)) {
-			ptr = bt_key(bt, slot);
-			line++;
-			fwrite(ptr->key, ptr->len, 1, stdout);
-			fputc('\n', stdout);
-		}
-
-        fprintf(stdout, "Finished reading %d keys\n", line);
-
-        fprintf(stdout, "Re-Insert everything\n");
-        numchars = line = 0;
-		while (numchars < numbytes) {
-			line++;
-			len = 0;
-
-			ch[0] = '\0';
-			while (ch[0] != '\n') {
-				memcpy(ch, fileBuffer + numchars + len, 1);
-				len += 1;
-			}
-			memcpy(key, fileBuffer + numchars, len - 1);
-			numchars += len;
-
-                if (bt_insertkey(bt, key, (len-1), line, *tod))
-				fprintf(stderr, "Error %d Line: %d\n", bt->err, line), exit(0);
-		}
-
-        fprintf(stdout, "started reading\n");
-
-        line = len = key[0] = 0;
-		if (slot = bt_startkey(bt, key, len))
-			slot--;
-		else
-			fprintf(stderr, "Error %d in StartKey. Syserror: %d\n", bt->err, errno), exit(0);
-
-		line++;
-		while (slot = bt_nextkey(bt, slot)) {
-			ptr = bt_key(bt, slot);
-			line++;
-			fwrite(ptr->key, ptr->len, 1, stdout);
-            fprintf(stdout, ", dead=%d", slotptr(bt->cursor, slot)->dead);
-			fputc('\n', stdout);
-		}
-
-		fprintf(stdout, "Finished reading %d keys\n", line);
-
+        */
 		/*
 		if (rowid = bt_findkey(bt, "voluntary", 9)) {
 			fprintf(stdout, "Found the key in row: %d\n", rowid);
@@ -2154,7 +2082,7 @@ typedef struct timeval timer;
 
 int main(int argc, char **argv)
 {
-	int idx, cnt, len, slot, err, stats;
+	int idx, cnt, len, slot, err, verbose;
 	pthread_t *threads;
 	timer start, stop;
 	double real_time;
@@ -2166,8 +2094,8 @@ int main(int argc, char **argv)
 	BtDb *bt;
 
 	if (argc < 5) {
-		fprintf(stderr, "Usage: %s stats(0 or 1) Write/Find/Multithread/Scan context_num context_string1 [context_string2...]\n", argv[0]);
-		fprintf(stderr, "  stats is whether or not you want to see timing statistics\n");
+		fprintf(stderr, "Usage: %s verbose(0 or 1) Write/Find/Multithread/Scan context_num context_string1 [context_string2...]\n", argv[0]);
+		fprintf(stderr, "  verbose is whether or not you want to see verbose statistics. Otherwise, output is csv-style only.\n");
 		fprintf(stderr, "  Write (w), Find (f), Multithread (m), and Scan (s) are the only options right now\n");
 		fprintf(stderr, "  context_num is some number that might be used in processing\n");
 		fprintf(stderr, "  context_string1 thru context_stringn are dependent on function\n\n");
@@ -2180,7 +2108,7 @@ int main(int argc, char **argv)
 
 	gettimeofday(&start, NULL);
 
-	stats = atoi(argv[1]);
+	verbose = atoi(argv[1]);
 	ctx_num = atoi(argv[3]);
 
 	cnt = argc - 4;
@@ -2219,7 +2147,7 @@ int main(int argc, char **argv)
 	gettimeofday(&stop, NULL);
 	real_time = 1000.0 * (stop.tv_sec - start.tv_sec) + 0.001 * (stop.tv_usec - start.tv_usec);
 
-	if (stats) {
+	if (verbose) {
 		fprintf(stdout, " Time to complete: %.2f seconds\n", real_time / 1000);
         fprintf(stdout, " Time waiting for read locks on root:\n");
 		for (idx = 0; idx < cnt; idx++) {
@@ -2254,26 +2182,25 @@ int main(int argc, char **argv)
 		for (idx = 0; idx < cnt; idx++) {
 			fprintf(stdout, "     Thread %d - %llu attempts\n", idx, mgr->writelockfail[idx]);
 		}
-		fprintf(stdout, "\n CSV Lines: \n");
-		fprintf(stdout, "Threads,Execution,Thread_Id,Read_Lock_Wait,Write_Lock_Wait,Read_Lock_Aquired,Write_Lock_Aquired,Read_Lock_Failed,Write_Lock_Failed\n");
+	    fprintf(stdout, " Low fence overwrites:\n");
+    	for (idx = 0; idx < cnt; idx++) {
+		    fprintf(stdout, "     Thread %d - %llu times\n", idx, mgr->lowfenceoverwrite[idx]);
+	    }
+	    fprintf(stdout, " Optimistic search failures:\n");
+	    for (idx = 0; idx < cnt; idx++) {
+	    	fprintf(stdout, "     Thread %d - %llu times\n", idx, mgr->optimisticfail[idx]);
+	    }
+	    fprintf(stdout, " Optimistic search successes:\n");
+	    for (idx = 0; idx < cnt; idx++) {
+		    fprintf(stdout, "     Thread %d - %llu times\n", idx, mgr->optimisticsuccess[idx]);
+    	}
+    } else {
+		//Threads,Total-Time,Thread-Id,Root-Read-Wait,Root-Write-Wait,Readlock-Wait,Writelock-wait,Readlock-Aquired,Writelock-Aquired,Readlock-Failed,Writelock-Failed,LowFence-Overwrites,Optimistic-Successes,Optimistic-Failures'
 		for (idx = 0; idx < cnt; idx++) {
-			fprintf(stdout, "%d,%.2f,%d,%.2f,%.2f,%llu,%llu,%llu,%llu\n", cnt, (real_time / 1000), idx, (double)(mgr->readlockwait[idx] / getTicksPerNano()),
-				(double)(mgr->writelockwait[idx] / getTicksPerNano()), mgr->readlockaquired[idx], mgr->writelockaquired[idx], mgr->readlockfail[idx], mgr->writelockfail[idx]);
+			fprintf(stdout, "%d,%.2f,%d,%.2f,%.2f,%.2f,%.2f,%llu,%llu,%llu,%llu,%llu,%llu,%llu", cnt, (real_time / 1000), idx, (double)(mgr->rootreadwait[idx] / getTicksPerNano()), (double)(mgr->rootwritewait[idx] / getTicksPerNano()), (double)(mgr->readlockwait[idx] / getTicksPerNano()), (double)(mgr->writelockwait[idx] / getTicksPerNano()), mgr->readlockaquired[idx], mgr->writelockaquired[idx], mgr->readlockfail[idx], mgr->writelockfail[idx], mgr->lowfenceoverwrite[idx], mgr->optimisticsuccess[idx], mgr->optimisticfail[idx]); 
 		}
-	}
 
-	fprintf(stdout, " Low fence overwrites:\n");
-	for (idx = 0; idx < cnt; idx++) {
-		fprintf(stdout, "     Thread %d - %llu times\n", idx, mgr->lowfenceoverwrite[idx]);
-	}
-	fprintf(stdout, " Optimistic search failures:\n");
-	for (idx = 0; idx < cnt; idx++) {
-		fprintf(stdout, "     Thread %d - %llu times\n", idx, mgr->optimisticfail[idx]);
-	}
-	fprintf(stdout, " Optimistic search successes:\n");
-	for (idx = 0; idx < cnt; idx++) {
-		fprintf(stdout, "     Thread %d - %llu times\n", idx, mgr->optimisticsuccess[idx]);
-	}
+    }
 
 	bt_mgrclose(mgr);
 }
