@@ -25,7 +25,7 @@ def buildcommand(filetype, threadnum):
     command = "./NewFosterbtreeg_URA 0 w 0"
     
     for partnum in range(1, threadnum+1):
-        command = command + " " + filetype + "/part" + str(partnum).zfill(2)
+        command = command + " " + filetype + str(threadnum).zfill(2) + "/part" + str(partnum).zfill(2)
 
     return command
 
