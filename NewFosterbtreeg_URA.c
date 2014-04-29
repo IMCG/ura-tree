@@ -23,10 +23,10 @@ REDISTRIBUTION OF THIS SOFTWARE.
 
 #define _FILE_OFFSET_BITS 64
 #define _LARGEFILE64_SOURCE
-#define VERIFY
+//#define VERIFY
 
 // Constants
-#define BITS 9//12//14
+#define BITS 14
 #define POOLSIZE 32768u // Max 65535
 #define SEGSIZE 4
 #define NUMMODE 0
@@ -1875,7 +1875,7 @@ void *index_file(void *arg)
 	switch (args->type | 0x20)
 	{
 	case 'w':
-		fprintf(stdout, "started indexing for %s\n", args->ctx_string);
+		//fprintf(stdout, "started indexing for %s\n", args->ctx_string);
 
 		/* open an existing file for reading */
 		in = fopen(args->ctx_string, "r");
@@ -1906,7 +1906,7 @@ void *index_file(void *arg)
 
 		/* confirm we have read the file by
 		outputing it to the console */
-		fprintf(stdout, "The file called %s has been loaded\n", args->ctx_string);
+		//fprintf(stdout, "The file called %s has been loaded\n", args->ctx_string);
 
 		/*Split the text by endline characters*/
 		numchars = 0;
@@ -1929,7 +1929,7 @@ void *index_file(void *arg)
 		/* free the memory we used for the buffer */
 		free(fileBuffer);
 
-		fprintf(stdout, "finished %s for %d keys\n", args->ctx_string, line);
+		//fprintf(stdout, "finished %s for %d keys\n", args->ctx_string, line);
 		/*
 		fprintf(stdout, "Check root page:\n");
 
