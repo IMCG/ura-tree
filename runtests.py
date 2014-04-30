@@ -55,9 +55,7 @@ while(thread <= endthread):
             #Execute command and write to file
             #print buildcommand("skew", thread) 
             print "Running test for skew %(threadnum)d case." % {"threadnum": thread }
-            out.write('skew,')
             out.write(str(subprocess.check_output(buildcommand("skew", thread).split())))
-            out.write('\n')
             
     
     # Check if we should also do sorted values
@@ -66,9 +64,7 @@ while(thread <= endthread):
             # Execute command and write to file
             #print buildcommand("sorted", thread)
             print "Running test for sorted %(threadnum)d case." % {"threadnum": thread }
-            out.write('sorted,')
             out.write(str(subprocess.check_output(buildcommand("sorted", thread).split())))
-            out.write('\n')            
 
     thread *= 2
 
