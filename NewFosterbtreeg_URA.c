@@ -21,17 +21,14 @@ REDISTRIBUTION OF THIS SOFTWARE.
 // Please see the project home page for documentation
 // code.google.com/p/high-concurrency-btree
 
-#define _FILE_OFFSET_BITS 64
-#define _LARGEFILE64_SOURCE
+#define _GNU_SOURCE
 //#define VERIFY
 
 // Constants
 #define BITS 14                         // Page size in bits
 #define SEGSIZE 4                       // Size of pages per pool in bits 
-#define BUFFERSIZE 4294967296u///8589934592u//4294967296u//2147483648 //1073741824
+#define BUFFERSIZE 8589934592u//4294967296u//2147483648 //1073741824
 #define MAXTHREADS 32
-
-#define _GNU_SOURCE
 
 #include <unistd.h>
 #include <stdio.h>
@@ -2178,7 +2175,21 @@ int main(int argc, char **argv)
     } else {
 		//Threads,Total-Time,Thread-Id,Root-Read-Wait,Root-Write-Wait,Readlock-Wait,Writelock-wait,Readlock-Aquired,Writelock-Aquired,Readlock-Failed,Writelock-Failed,LowFence-Overwrites,Optimistic-Successes,Optimistic-Failures'
 		for (idx = 0; idx < cnt; idx++) {
-			fprintf(stdout, "%s,%d,%.2f,%d,%.2f,%.2f,%.2f,%.2f,%llu,%llu,%llu,%llu,%llu,%llu,%llu\n", argv[idx + 4], cnt, (real_time / 1000), idx, (double)(mgr->rootreadwait[idx] / getTicksPerNano()), (double)(mgr->rootwritewait[idx] / getTicksPerNano()), (double)(mgr->readlockwait[idx] / getTicksPerNano()), (double)(mgr->writelockwait[idx] / getTicksPerNano()), mgr->readlockaquired[idx], mgr->writelockaquired[idx], mgr->readlockfail[idx], mgr->writelockfail[idx], mgr->lowfenceoverwrite[idx], mgr->optimisticsuccess[idx], mgr->optimisticfail[idx]); 
+            fprintf(stdout, "%s,", argv[idx + 4]);
+            fprintf(stdout, "%d,", cnt);
+            fprintf(stdout, "%.2f,", (real_time / 1000));
+            fprintf(stdout, "%d,", idx);
+            fprintf(stdout, "%.2f,", (double)(mgr->rootreadwait[idx] / getTicksPerNano()));
+            fprintf(stdout, "%.2f,", (double)(mgr->rootwritewait[idx] / getTicksPerNano()));
+            fprintf(stdout, "%.2f,", (double)(mgr->readlockwait[idx] / getTicksPerNano()));
+            fprintf(stdout, "%.2f,", (double)(mgr->writelockwait[idx] / getTicksPerNano()));
+            fprintf(stdout, "%llu,", mgr->readlockaquired[idx]);
+            fprintf(stdout, "%llu,", mgr->writelockaquired[idx]);
+            fprintf(stdout, "%llu,", mgr->readlockfail[idx]);
+            fprintf(stdout, "%llu,", mgr->writelockfail[idx]);
+            fprintf(stdout, "%llu,", mgr->lowfenceoverwrite[idx]);
+            fprintf(stdout, "%llu,", mgr->optimisticsuccess[idx]);
+            fprintf(stdout, "%llu\n", mgr->optimisticfail[idx]);
 		}
 
     }
