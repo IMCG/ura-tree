@@ -152,6 +152,7 @@ typedef struct {
 	volatile ushort poolcnt;	// highest page pool node in use
 	volatile ushort evicted;	// last evicted hash table slot
 	ushort poolmask;			// total size of pages in logical memory pool segment - 1
+    uint optimistic : 1;        // Use optimistic searching?
 
 	// Tracking Data
     uid rootreadwait[MAXTHREADS];
@@ -207,7 +208,7 @@ extern uint bt_startkey(BtDb *bt, unsigned char *key, uint len);
 extern uint bt_nextkey(BtDb *bt, uint slot);
 
 //	manager functions
-extern BtMgr *bt_mgr(char *name, uint bits, uint segsize);
+extern BtMgr *bt_mgr(char *name, uint bits, uint segsize, int optimistic);
 void bt_mgrclose(BtMgr *mgr);
 
 //  Helper functions to return cursor slot values
@@ -409,7 +410,7 @@ void bt_close(BtDb *bt)
 //	call with file_name, BT_openmode, bits in page size (e.g. 16),
 //		size of mapped page pool (e.g. 8192)
 
-BtMgr *bt_mgr(char *name, uint bits, uint segsize)
+BtMgr *bt_mgr(char *name, uint bits, uint segsize, int optimistic)
 {
 	uint lvl, cacheblk, last;
 	BtPage alloc;
@@ -434,6 +435,11 @@ BtMgr *bt_mgr(char *name, uint bits, uint segsize)
 
 	mgr->page_size = 1 << bits;
 	mgr->page_bits = bits;
+
+    if (optimistic)
+        mgr->optimistic = 1;
+    else
+        mgr->optimistic = 0;
 
     // Initialize all variables
 	for (i = 0; i < MAXTHREADS; i++) {
@@ -956,6 +962,10 @@ int bt_optimisticloadpage(BtDb *bt, unsigned char *key, uint len, uint lvl, uint
 	uid page_no = ROOT_page, prevpage = 0;
 	uint drill = 0xff, slot;
 	uint mode, prevmode;
+
+    // Check if optimistic is enabled
+    if (!bt->mgr->optimistic)
+        return bt_loadpage(bt, key, len, lvl, lock);
 
 	//  start at root of btree and drill down
 
@@ -1815,8 +1825,7 @@ uint bt_tod(BtDb *bt, uint slot)
 
 typedef struct {
 	char type, idx;
-	char *ctx_string;
-	int ctx_num;
+	char *filename;
 	BtMgr *mgr;
 } ThreadArg;
 
@@ -1845,10 +1854,10 @@ void *index_file(void *arg)
 	switch (args->type | 0x20)
 	{
 	case 'w':
-		//fprintf(stdout, "started indexing for %s\n", args->ctx_string);
+		//fprintf(stdout, "started indexing for %s\n", args->filename);
 
 		// open an existing file for reading
-		in = fopen(args->ctx_string, "r");
+		in = fopen(args->filename, "r");
 
 		// quit if the file does not exist
 		if (in == NULL)
@@ -1876,7 +1885,7 @@ void *index_file(void *arg)
 
 		// confirm we have read the file by
 		// outputing it to the console
-		//fprintf(stdout, "The file called %s has been loaded\n", args->ctx_string);
+		//fprintf(stdout, "The file called %s has been loaded\n", args->filename);
 
 		// Split the text by endline characters
 		numchars = 0;
@@ -1899,7 +1908,7 @@ void *index_file(void *arg)
 		// free the memory we used for the buffer
 		free(fileBuffer);
 
-		//fprintf(stdout, "finished %s for %d keys\n", args->ctx_string, line);
+		//fprintf(stdout, "finished %s for %d keys\n", args->filename, line);
 
         // Below is for printing out root page
 		/*
@@ -1999,6 +2008,7 @@ void *index_file(void *arg)
 		break;
 	case 's':
         // Print out entire tree. No longer in use
+        /*
 		len = key[0] = 0;
 
 		fprintf(stdout, "started reading\n");
@@ -2017,10 +2027,12 @@ void *index_file(void *arg)
 		}
 
 		fprintf(stdout, "Finished reading %d keys\n", line);
+        */
 
 		break;
 	case 'f':
         // Find specific key. No longer in use.
+        /*
 		fprintf(stdout, "started finding\n");
 		
 		if (rowid = bt_findkey(bt, args->ctx_string, args->ctx_num)) {
@@ -2048,6 +2060,7 @@ void *index_file(void *arg)
 				fputc('\n', stdout);
 			}
 		}
+        */
 
 		break;
 	}
@@ -2065,17 +2078,17 @@ int main(int argc, char **argv)
 	timer start, stop;
 	double real_time;
 	ThreadArg *args;
-	int ctx_num = 0;
+	int optimistic;
 	char ch[256];
 	BtMgr *mgr;
 	BtDb *bt;
 
 	if (argc < 5) {
-		fprintf(stderr, "Usage: %s verbose(0 or 1) Write context_num context_string1 [context_string2...]\n", argv[0]);
+		fprintf(stderr, "Usage: %s verbose(0 or 1) Write optimistic(0 or 1) filename1 [filename2...]\n", argv[0]);
 		fprintf(stderr, "  verbose is whether or not you want to see verbose statistics. Otherwise, output is csv-style only.\n");
 		fprintf(stderr, "  Write (w) is the only valid option right now. \n");
-		fprintf(stderr, "  context_num is some number that might be used in processing\n");
-		fprintf(stderr, "  context_string1 thru context_stringn are dependent on function\n\n");
+		fprintf(stderr, "  Optimistic determines whether or not to use optimistic searching\n");
+		fprintf(stderr, "  filename arguments are names of files that contain keys to index\n\n");
 
 		fprintf(stderr, "  in the context of writes, the number means nothing and the strings are filenames\n");
 		fprintf(stderr, "  in the context of finds, the number is the key length and the first string is the key to find\n");
@@ -2086,14 +2099,14 @@ int main(int argc, char **argv)
 	gettimeofday(&start, NULL);
 
 	verbose = atoi(argv[1]);
-	ctx_num = atoi(argv[3]);
+	optimistic = atoi(argv[3]);
 
 	cnt = argc - 4;
 	threads = malloc(cnt * sizeof(pthread_t));
 
 	args = malloc(cnt * sizeof(ThreadArg));
 
-	mgr = bt_mgr((argv[1]), BITS, SEGSIZE);
+	mgr = bt_mgr((argv[1]), BITS, SEGSIZE, optimistic);
 
     // Flag and counter are set for purposes of verification. Test code only.
 	mgr->flag = 0x7;
@@ -2108,8 +2121,7 @@ int main(int argc, char **argv)
 
     // fire off threads
 	for (idx = 0; idx < cnt; idx++) {
-		args[idx].ctx_string = argv[idx + 4];
-		args[idx].ctx_num = ctx_num;
+		args[idx].filename = argv[idx + 4];
 		args[idx].type = argv[2][0];
 		args[idx].mgr = mgr;
 		args[idx].idx = idx;
