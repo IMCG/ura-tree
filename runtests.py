@@ -20,7 +20,7 @@ def checkfiles(fileroot, filetype, threadnum):
 
     return fileExist and dirExist
 
-def buildcommand(noOptimistic, filetype, threadnum):
+def buildcommand(noOptimistic, smallset, filetype, threadnum):
     command = "./NewFosterbtreeg_URA 0 w"
 
     if(noOptimistic):
@@ -29,7 +29,12 @@ def buildcommand(noOptimistic, filetype, threadnum):
         command = command + " 1"
     
     for partnum in range(1, threadnum+1):
-        command = command + " " + filetype + str(threadnum).zfill(2) + "/part" + str(partnum).zfill(2)
+        if(smallset):
+            command = command + " smallset/"
+        else:
+            command = command + " largeset/"
+
+        command = command + filetype + str(threadnum).zfill(2) + "/part" + str(partnum).zfill(2)
 
     return command
 
@@ -40,6 +45,7 @@ parser.add_argument('-s', '--start', action='store', default=1, type=int, choice
 parser.add_argument('-e', '--end', action='store', default=32, type=int, choices=[1, 2, 4, 8, 16, 32], help='The ending number of threads. Pick 1, 2, 4, 8, 16, or 32')
 parser.add_argument('--no-sorted', action='store_true', help='Don\'t include sorted data sets')
 parser.add_argument('--no-optimistic', action='store_true', help='Don\'t use optimistic searching')
+parser.add_argument('--smallset', action='store_true', help='Use small dataset')
 
 args = parser.parse_args()
 
@@ -59,18 +65,18 @@ while(thread <= endthread):
     #Check existence of files
     if(checkfiles(FILE_ROOT, "skew", thread)):
             #Execute command and write to file
-            #print buildcommand(args.no_optimistic, "skew", thread) 
+            #print buildcommand(args.no_optimistic, args.smallset, "skew", thread) 
             print "Running test for skew %(threadnum)d case." % {"threadnum": thread }
-            out.write(str(subprocess.check_output(buildcommand(args.no_optimistic, "skew", thread).split())))
+            out.write(str(subprocess.check_output(buildcommand(args.no_optimistic, args.smallset, "skew", thread).split())))
             
     
     # Check if we should also do sorted values
     if not(args.no_sorted):
         if(checkfiles(FILE_ROOT, "sorted", thread)):
             # Execute command and write to file
-            #print buildcommand(args.no_optimistic, "sorted", thread)
+            #print buildcommand(args.no_optimistic, args.smallset, "sorted", thread)
             print "Running test for sorted %(threadnum)d case." % {"threadnum": thread }
-            out.write(str(subprocess.check_output(buildcommand(args.no_optimistic, "sorted", thread).split())))
+            out.write(str(subprocess.check_output(buildcommand(args.no_optimistic, args.smallset, "sorted", thread).split())))
 
     thread *= 2
 

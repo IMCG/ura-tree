@@ -1258,7 +1258,7 @@ void bt_addkeytopage(BtDb *bt, uint slot, unsigned char *key, uint len, uid id, 
 	BtPage page = bt->page;
 	uint idx;
 
-	if (slot == 1)
+	if (slot == 1 && keycmp(keyptr(page, slot), key, len) > 0)
 		bt->mgr->lowfenceoverwrite[bt->thread_id]++;
 
 	// calculate next available slot and copy key into page
@@ -1463,7 +1463,7 @@ BTERR bt_splitpage(BtDb *bt)
 	key = keyptr(page, cnt);
 	nxt -= key->len + 1;
 	memcpy((unsigned char *)bt->frame + nxt, key, key->len + 1);
-	memcpy(slotptr(bt->frame, ++idx)->id, slotptr(page, cnt)->id, BtId);
+	memset(slotptr(bt->frame, ++idx)->id, 0, BtId);//slotptr(page, cnt)->id, BtId);
 	slotptr(bt->frame, idx)->tod = slotptr(page, cnt)->tod;
 	slotptr(bt->frame, idx)->off = nxt;
 	slotptr(bt->frame, idx)->fence = 1;
@@ -1530,6 +1530,7 @@ BTERR bt_splitpage(BtDb *bt)
 	// Mark fence keys
 	slotptr(page, 1)->fence = 1;
     slotptr(page, 1)->dead = 1;
+    memset(slotptr(page, 1)->id, 0, BtId);
     page->act--;
 	slotptr(page, idx)->fence = 1;
 
@@ -1735,7 +1736,8 @@ BTERR bt_insertkey(BtDb *bt, unsigned char *key, uint len, uid id, uint tod)
 		page = bt->page;
 
 		if (!keycmp(ptr, key, len)) {
-			slotptr(page, slot)->dead = 0;
+            if(slot != 1)
+			    slotptr(page, slot)->dead = 0;
 			slotptr(page, slot)->tod = tod;
 			bt_putid(slotptr(page, slot)->id, id);
 			return bt_unlockpage(bt, bt->page_no, BtLockWrite);
