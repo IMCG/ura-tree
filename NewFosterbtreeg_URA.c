@@ -1223,7 +1223,7 @@ uint bt_cleanpage(BtDb *bt, uint amt)
 
 	while (cnt++ < max) {
 		// always leave fence keys and foster children in list
-		if (slotptr(bt->frame, cnt)->fence && slotptr(bt->frame, cnt)->dead)
+		if (cnt < max - page->foster && slotptr(bt->frame,cnt)->dead && !slotptr(bt->frame, cnt)->fence)
 			continue;
 
 		// copy key
@@ -1279,7 +1279,7 @@ void bt_addkeytopage(BtDb *bt, uint slot, unsigned char *key, uint len, uid id, 
 
 	page->act++;
 
-	while (idx > slot && idx > 2)
+	while (idx > slot && idx > 1)
 		*slotptr(page, idx) = *slotptr(page, idx - 1), idx--;
 
 	bt_putid(slotptr(page, slot)->id, id);
@@ -1306,10 +1306,16 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 #ifdef VERIFY
 	if (bt->mgr->flag & 0x1) {
 		fprintf(stdout, "\nFirst root split before:\n");
+        fprintf(stdout, "    page_no=%d\n", ROOT_page);
+		fprintf(stdout, "    cnt=%d\n", root->cnt);
+		fprintf(stdout, "    act=%d\n", root->act);
+		fprintf(stdout, "    foster=%d\n", root->foster);
+
 
 		for (test = 1; test <= root->cnt; test++) {
 			ptr = keyptr(root, test);
 			fwrite(ptr->key, ptr->len, 1, stdout);
+            fprintf(stdout, ", fence=%u, dead=%u, child=%llu", slotptr(root, test)->fence, slotptr(root, test)->dead, bt_getid(slotptr(root, test)->id));
 			fputc('\n', stdout);
 		}
 	}
@@ -1378,9 +1384,14 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 		bt->mgr->flag = bt->mgr->flag & 0xe;
 
 		fprintf(stdout, "\nFirst root split after - root:\n");
+        fprintf(stdout, "    page_no=%d\n", ROOT_page);
+		fprintf(stdout, "    cnt=%d\n", root->cnt);
+		fprintf(stdout, "    act=%d\n", root->act);
+		fprintf(stdout, "    foster=%d\n", root->foster);
 		for (test = 1; test <= root->cnt; test++) {
 			ptr = keyptr(root, test);
 			fwrite(ptr->key, ptr->len, 1, stdout);
+            fprintf(stdout, ", fence=%u, dead=%u, child=%llu", slotptr(root, test)->fence, slotptr(root, test)->dead, bt_getid(slotptr(root, test)->id));
 			fputc('\n', stdout);
 		}
 
@@ -1388,10 +1399,14 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 			return bt->err;
 
 		fprintf(stdout, "\nFirst root split after - new page:\n");
+        fprintf(stdout, "    page_no=%llu\n", new_page);
+		fprintf(stdout, "    cnt=%d\n", page->cnt);
+		fprintf(stdout, "    act=%d\n", page->act);
+		fprintf(stdout, "    foster=%d\n", page->foster);
 		for (test = 1; test <= page->cnt; test++) {
 			ptr = keyptr(page, test);
 			fwrite(ptr->key, ptr->len, 1, stdout);
-			fprintf(stdout, ", fence=%u", slotptr(page, test)->fence);
+			fprintf(stdout, ", fence=%u, dead=%u, child=%llu", slotptr(page, test)->fence, slotptr(page, test)->dead, bt_getid(slotptr(page, test)->id));
 			fputc('\n', stdout);
 		}
 
@@ -1431,6 +1446,7 @@ BTERR bt_splitpage(BtDb *bt)
 		}
 
 		fprintf(stdout, "\nA normal split before:\n");
+        fprintf(stdout, "    page_no=%llu\n", page_no);
 		fprintf(stdout, "    cnt=%d\n", page->cnt);
 		fprintf(stdout, "    act=%d\n", page->act);
 		fprintf(stdout, "    foster=%d\n", page->foster);
@@ -1441,7 +1457,7 @@ BTERR bt_splitpage(BtDb *bt)
 		for (test = 1; test <= page->cnt; test++) {
 			ptr = keyptr(page, test);
 			fwrite(ptr->key, ptr->len, 1, stdout);
-			fprintf(stdout, ", fence=%u, dead=%u", slotptr(page, test)->fence, slotptr(page, test)->dead);
+			fprintf(stdout, ", fence=%u, dead=%u, child=%llu", slotptr(page, test)->fence, slotptr(page, test)->dead, bt_getid(slotptr(page, test)->id));
 			fputc('\n', stdout);
 		}
 	}
@@ -1463,7 +1479,7 @@ BTERR bt_splitpage(BtDb *bt)
 	key = keyptr(page, cnt);
 	nxt -= key->len + 1;
 	memcpy((unsigned char *)bt->frame + nxt, key, key->len + 1);
-	memset(slotptr(bt->frame, ++idx)->id, 0, BtId);//slotptr(page, cnt)->id, BtId);
+    bt_putid(slotptr(bt->frame, ++idx)->id, 0);
 	slotptr(bt->frame, idx)->tod = slotptr(page, cnt)->tod;
 	slotptr(bt->frame, idx)->off = nxt;
 	slotptr(bt->frame, idx)->fence = 1;
@@ -1530,7 +1546,7 @@ BTERR bt_splitpage(BtDb *bt)
 	// Mark fence keys
 	slotptr(page, 1)->fence = 1;
     slotptr(page, 1)->dead = 1;
-    memset(slotptr(page, 1)->id, 0, BtId);
+    bt_putid(slotptr(page, 1)->id, 0);
     page->act--;
 	slotptr(page, idx)->fence = 1;
 
@@ -1671,11 +1687,14 @@ try_again:
 			bt->mgr->flag = bt->mgr->flag & 0x7;
 
 		fprintf(stdout, "\nA normal split - page 1:\n");
-
+        fprintf(stdout, "    page_no=%llu\n", page_no);
+		fprintf(stdout, "    cnt=%d\n", page->cnt);
+		fprintf(stdout, "    act=%d\n", page->act);
+		fprintf(stdout, "    foster=%d\n", page->foster);
 		for (test = 1; test <= page->cnt; test++) {
 			ptr = keyptr(page, test);
 			fwrite(ptr->key, ptr->len, 1, stdout);
-			fprintf(stdout, ", fence=%u, dead=%u", slotptr(page, test)->fence, slotptr(page, test)->dead);
+			fprintf(stdout, ", fence=%u, dead=%u, child=%llu", slotptr(page, test)->fence, slotptr(page, test)->dead, bt_getid(slotptr(page, test)->id));
 			fputc('\n', stdout);
 		}
 
@@ -1683,10 +1702,14 @@ try_again:
 			return bt->err;
 
 		fprintf(stdout, "\nA normal split - page 2:\n");
+        fprintf(stdout, "    page_no=%llu\n", new_page);
+		fprintf(stdout, "    cnt=%d\n", page->cnt);
+		fprintf(stdout, "    act=%d\n", page->act);
+		fprintf(stdout, "    foster=%d\n", page->foster);
 		for (test = 1; test <= page->cnt; test++) {
 			ptr = keyptr(page, test);
 			fwrite(ptr->key, ptr->len, 1, stdout);
-			fprintf(stdout, ", fence=%u, dead=%u", slotptr(page, test)->fence, slotptr(page, test)->dead);
+			fprintf(stdout, ", fence=%u, dead=%u, child=%llu", slotptr(page, test)->fence, slotptr(page, test)->dead, bt_getid(slotptr(page, test)->id));
 			fputc('\n', stdout);
 		}
 
@@ -1694,11 +1717,14 @@ try_again:
 			return bt->err;
 
 		fprintf(stdout, "\nA normal split - parent:\n");
-
+        fprintf(stdout, "    page_no=%llu\n", bt->page_no);
+		fprintf(stdout, "    cnt=%d\n", bt->page->cnt);
+		fprintf(stdout, "    act=%d\n", bt->page->act);
+		fprintf(stdout, "    foster=%d\n", bt->page->foster);
 		for (test = 1; test <= bt->page->cnt; test++) {
 			ptr = keyptr(bt->page, test);
 			fwrite(ptr->key, ptr->len, 1, stdout);
-			fprintf(stdout, ", fence=%u, dead=%u", slotptr(bt->page, test)->fence, slotptr(bt->page, test)->dead);
+			fprintf(stdout, ", fence=%u, dead=%u, child=%llu", slotptr(bt->page, test)->fence, slotptr(bt->page, test)->dead, bt_getid(slotptr(bt->page, test)->id));
 			fputc('\n', stdout);
 		}
 
