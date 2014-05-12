@@ -3,9 +3,15 @@ import sys
 import subprocess
 import os.path
 
-def checkfiles(fileroot, filetype, threadnum):
+def checkfiles(fileroot, smallset, filetype, threadnum):
     #Check existence of files
-    directory = filetype + str(threadnum).zfill(2)
+    directory = ""
+    if smallset:
+        directory += "smallset/"
+    else:
+        directory += "largeset/"
+
+    directory += filetype + str(threadnum).zfill(2)
     dirExist = os.path.isdir(os.path.join(fileroot, directory))
     fileExist = True
 
@@ -63,7 +69,7 @@ FILE_ROOT = os.path.abspath(os.path.dirname(__file__))
 # Run tests for different threads
 while(thread <= endthread):
     #Check existence of files
-    if(checkfiles(FILE_ROOT, "skew", thread)):
+    if(checkfiles(FILE_ROOT, args.smallset, "skew", thread)):
             #Execute command and write to file
             #print buildcommand(args.no_optimistic, args.smallset, "skew", thread) 
             print "Running test for skew %(threadnum)d case." % {"threadnum": thread }
@@ -72,7 +78,7 @@ while(thread <= endthread):
     
     # Check if we should also do sorted values
     if not(args.no_sorted):
-        if(checkfiles(FILE_ROOT, "sorted", thread)):
+        if(checkfiles(FILE_ROOT, args.smallset, "sorted", thread)):
             # Execute command and write to file
             #print buildcommand(args.no_optimistic, args.smallset, "sorted", thread)
             print "Running test for sorted %(threadnum)d case." % {"threadnum": thread }

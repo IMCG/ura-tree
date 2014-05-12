@@ -27,7 +27,7 @@ REDISTRIBUTION OF THIS SOFTWARE.
 // Constants
 #define BITS 14                         // Page size in bits
 #define SEGSIZE 4                       // Size of pages per pool in bits 
-#define BUFFERSIZE 8589934592u//4294967296u//2147483648 //1073741824
+#define BUFFERSIZE 4294967296u //34359738363u, 17179869184u, 8589934592u, 4294967296u, 2147483648u, 1073741824u
 #define MAXTHREADS 32
 
 #include <unistd.h>
@@ -576,8 +576,10 @@ char *bt_findpool(BtDb *bt, uid page_no)
 	char *pool_ptr;
 	off64_t off = (page_no & ~bt->mgr->poolmask) << bt->mgr->page_bits;
 
-	if (off > (BUFFERSIZE - 1))
+	if (off > (BUFFERSIZE - bt->mgr->page_size - 1)) {
+        fprintf(stderr, "Error: Memory overflow\n");
 		return NULL;
+    }
 
 	pool_ptr = bt->mgr->buffer + off;
 
@@ -1862,10 +1864,10 @@ typedef struct {
 
 void *index_file(void *arg)
 {
-	int line = 0, found = 0, cnt = 0;
+	unsigned long long line = 0, found = 0, cnt = 0;
 	unsigned char key[256];
 	ThreadArg *args = arg;
-	int len = 0, slot, rowid, numchars;
+	unsigned long long len = 0, slot, rowid, numchars;
 	time_t tod[1];
 	BtKey ptr;
 	BtPage page;
@@ -1874,7 +1876,7 @@ void *index_file(void *arg)
 	FILE *in;
 	char *fileBuffer, *token;
 	unsigned char ch[1];
-	long numbytes;
+	unsigned long long numbytes;
 
 	bt = bt_open(args->mgr, args->idx);
 	time(tod);
@@ -1929,14 +1931,14 @@ void *index_file(void *arg)
 			memcpy(key, fileBuffer + numchars, len - 1);
 			numchars += len;
 
-                if (bt_insertkey(bt, key, (len-1), line, *tod))
-				fprintf(stderr, "Error %d Line: %d\n", bt->err, line), exit(0);
+            if (bt_insertkey(bt, key, (len-1), line, *tod))
+				fprintf(stderr, "Error %d Line: %llu\n", bt->err, line), exit(0);
 		}
 
 		// free the memory we used for the buffer
 		free(fileBuffer);
 
-		//fprintf(stdout, "finished %s for %d keys\n", args->filename, line);
+		//fprintf(stdout, "finished %s for %llu keys\n", args->filename, line);
 
         // Below is for printing out root page
 		/*
@@ -1951,7 +1953,7 @@ void *index_file(void *arg)
 		fprintf(stdout, "    lvl: %d\n", page->lvl);
 
 		for (found = 1; found <= page->cnt; found++) {
-			ptr = keyptr(bt->page, found);
+			ptr = keyptr(bt->page, (int)found);
 			fwrite(ptr->key, ptr->len, 1, stdout);
 			fputc('\n', stdout);
 		}
@@ -1960,7 +1962,7 @@ void *index_file(void *arg)
 			return 0;
 		*/
     
-        // Below is for printing out entire set of leaf keys
+        // Below is for printing out entire set of leaf keys or just reading unique keys
         /*
 		fprintf(stdout, "started reading\n");
 
@@ -1974,12 +1976,12 @@ void *index_file(void *arg)
 		while (slot = bt_nextkey(bt, slot)) {
 			ptr = bt_key(bt, slot);
 			line++;
-			fwrite(ptr->key, ptr->len, 1, stdout);
-            fprintf(stdout, ", dead=%d", slotptr(bt->cursor, slot)->dead);
-			fputc('\n', stdout);
+			//fwrite(ptr->key, ptr->len, 1, stdout);
+            //fprintf(stdout, ", dead=%d", slotptr(bt->cursor, slot)->dead);
+			//fputc('\n', stdout);
 		}
 
-		fprintf(stdout, "Finished reading %d keys\n", line);
+		fprintf(stdout, "Finished reading %llu keys\n", line);
         */
 
         // Below is for searching an arbitrary key and printing out its page
@@ -2004,7 +2006,7 @@ void *index_file(void *arg)
 		if (slot && rowid && bt->page) {
 			fprintf(stdout, "Printing out page:\n");
 			for (found = 1; found <= bt->page->cnt; found++) {
-				ptr = keyptr(bt->page, found);
+				ptr = keyptr(bt->page, (int)found);
 				fwrite(ptr->key, ptr->len, 1, stdout);
 				fputc('\n', stdout);
 			}
@@ -2026,7 +2028,7 @@ void *index_file(void *arg)
 			slot = 0;
 
 			for (found = 1; found <= bt->cursor->cnt; found++) {
-				ptr = keyptr(bt->cursor, found);
+				ptr = keyptr(bt->cursor, (int)found);
 				fwrite(ptr->key, ptr->len, 1, stdout);
 				fputc('\n', stdout);
 			}
