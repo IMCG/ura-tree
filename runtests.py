@@ -63,7 +63,7 @@ thread = args.start
 endthread = args.end
 filename = args.outfile + '.csv'
 out = open(filename, 'w')
-out.write('Type,Threads,Total-Time,Thread-Id,Root-Read-Wait,Root-Write-Wait,Readlock-Wait,Writelock-wait,Readlock-Aquired,Writelock-Aquired,Readlock-Failed,Writelock-Failed,LowFence-Overwrites,Optimistic-Successes,Optimistic-Failures\n')
+out.write('Type,Threads,Total-Time,Thread-Id,Thread-Time,Root-Read-Wait,Root-Write-Wait,Readlock-Wait,Writelock-wait,Readlock-Aquired,Writelock-Aquired,Readlock-Failed,Writelock-Failed,LowFence-Overwrites,Optimistic-Successes,Optimistic-Failures\n')
 FILE_ROOT = os.path.abspath(os.path.dirname(__file__))
 
 # Run tests for different threads

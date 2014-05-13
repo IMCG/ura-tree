@@ -163,8 +163,8 @@ typedef struct {
 	uid writelockaquired[MAXTHREADS];
 	uid readlockfail[MAXTHREADS];
 	uid writelockfail[MAXTHREADS];
+    double threadtime[MAXTHREADS];
 
-	// Test vars, remove this
 	int flag;
 	int counter;
 	uid lowfenceoverwrite[MAXTHREADS];
@@ -454,6 +454,7 @@ BtMgr *bt_mgr(char *name, uint bits, uint segsize, int optimistic)
 		mgr->lowfenceoverwrite[i] = 0;
 		mgr->optimisticfail[i] = 0;
 		mgr->optimisticsuccess[i] = 0;
+        mgr->threadtime[i] = 0.0;
 	}
 
 	//  mask for logical memory pools
@@ -1853,6 +1854,8 @@ uint bt_tod(BtDb *bt, uint slot)
 	return slotptr(bt->cursor, slot)->tod;
 }
 
+typedef struct timeval timer;
+
 typedef struct {
 	char type, idx;
 	char *filename;
@@ -1869,6 +1872,8 @@ void *index_file(void *arg)
 	ThreadArg *args = arg;
 	unsigned long long len = 0, slot, rowid, numchars;
 	time_t tod[1];
+    timer start, stop;
+    double real_time;
 	BtKey ptr;
 	BtPage page;
 	uid right;
@@ -1917,6 +1922,8 @@ void *index_file(void *arg)
 		// outputing it to the console
 		//fprintf(stdout, "The file called %s has been loaded\n", args->filename);
 
+        gettimeofday(&start, NULL);
+
 		// Split the text by endline characters
 		numchars = 0;
 		while (numchars < numbytes) {
@@ -1935,8 +1942,13 @@ void *index_file(void *arg)
 				fprintf(stderr, "Error %d Line: %llu\n", bt->err, line), exit(0);
 		}
 
+        gettimeofday(&stop, NULL);
+	    real_time = 1000.0 * (stop.tv_sec - start.tv_sec) + 0.001 * (stop.tv_usec - start.tv_usec);
+
 		// free the memory we used for the buffer
 		free(fileBuffer);
+
+        bt->mgr->threadtime[args->idx] = real_time;
 
 		//fprintf(stdout, "finished %s for %llu keys\n", args->filename, line);
 
@@ -2099,8 +2111,6 @@ void *index_file(void *arg)
 	return NULL;
 }
 
-typedef struct timeval timer;
-
 int main(int argc, char **argv)
 {
 	int idx, cnt, len, slot, err, verbose;
@@ -2169,6 +2179,10 @@ int main(int argc, char **argv)
 
 	if (verbose) {
 		fprintf(stdout, " Time to complete: %.2f seconds\n", real_time / 1000);
+        fprintf(stdout, " Per thread execution time: \n");
+		for (idx = 0; idx < cnt; idx++) {
+			fprintf(stdout, "     Thread %d - %.2f seconds\n", idx, mgr->threadtime[idx] / 1000);
+		}
         fprintf(stdout, " Time waiting for read locks on root:\n");
 		for (idx = 0; idx < cnt; idx++) {
 			fprintf(stdout, "     Thread %d - %.2f seconds\n", idx, (double)(mgr->rootreadwait[idx] / getTicksPerNano() / 1000000000));
@@ -2215,12 +2229,13 @@ int main(int argc, char **argv)
 		    fprintf(stdout, "     Thread %d - %llu times\n", idx, mgr->optimisticsuccess[idx]);
     	}
     } else {
-		//Threads,Total-Time,Thread-Id,Root-Read-Wait,Root-Write-Wait,Readlock-Wait,Writelock-wait,Readlock-Aquired,Writelock-Aquired,Readlock-Failed,Writelock-Failed,LowFence-Overwrites,Optimistic-Successes,Optimistic-Failures'
+		//Threads,Total-Time,Thread-Id,Thread-Time,Root-Read-Wait,Root-Write-Wait,Readlock-Wait,Writelock-wait,Readlock-Aquired,Writelock-Aquired,Readlock-Failed,Writelock-Failed,LowFence-Overwrites,Optimistic-Successes,Optimistic-Failures'
 		for (idx = 0; idx < cnt; idx++) {
             fprintf(stdout, "%s,", argv[idx + 4]);
             fprintf(stdout, "%d,", cnt);
             fprintf(stdout, "%.2f,", (real_time / 1000));
             fprintf(stdout, "%d,", idx);
+            fprintf(stdout, "%.2f,", (mgr->threadtime[idx] / 1000));
             fprintf(stdout, "%.2f,", (double)(mgr->rootreadwait[idx] / getTicksPerNano()));
             fprintf(stdout, "%.2f,", (double)(mgr->rootwritewait[idx] / getTicksPerNano()));
             fprintf(stdout, "%.2f,", (double)(mgr->readlockwait[idx] / getTicksPerNano()));
