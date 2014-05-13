@@ -1,0 +1,6 @@
+started indexing for largeset/skew01/part01
+The file called largeset/skew01/part01 has been loaded
+finished largeset/skew01/part01 for 752495240 keys
+started reading
+Finished reading 1401775 keys
+largeset/skew01/part01,1,1110.45,0,58602729472.00,48805.11,111651733504.00,72558149632.00,1459637063,752514221,0,0,0,752501567,1
