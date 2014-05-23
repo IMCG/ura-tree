@@ -23,6 +23,7 @@ REDISTRIBUTION OF THIS SOFTWARE.
 
 #define _GNU_SOURCE
 //#define VERIFY
+#define ONELOCK
 
 // Constants
 #define BITS 14                         // Page size in bits
@@ -38,6 +39,7 @@ REDISTRIBUTION OF THIS SOFTWARE.
 #include <sys/mman.h>
 #include <errno.h>
 #include <pthread.h>
+#include <sched.h>
 
 #include <memory.h>
 #include <string.h>
@@ -1870,6 +1872,8 @@ void *index_file(void *arg)
 	unsigned long long line = 0, found = 0, cnt = 0;
 	unsigned char key[256];
 	ThreadArg *args = arg;
+    cpu_set_t cpuset;
+    int err, cpu;
 	unsigned long long len = 0, slot, rowid, numchars;
 	time_t tod[1];
     timer start, stop;
@@ -1882,6 +1886,37 @@ void *index_file(void *arg)
 	char *fileBuffer, *token;
 	unsigned char ch[1];
 	unsigned long long numbytes;
+
+    CPU_ZERO(&cpuset);
+    if (args->idx < 8) {
+        for (cpu=0; cpu<8; cpu++)
+            CPU_SET(cpu, &cpuset);
+
+        err = pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
+    }
+    else if (args->idx < 16) {
+        for (cpu=8; cpu<16; cpu++)
+            CPU_SET(cpu, &cpuset);
+
+        err = pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
+    }
+    else if (args->idx < 24) {
+        for (cpu=16; cpu<24; cpu++)
+            CPU_SET(cpu, &cpuset);
+
+        err = pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
+    }
+    else if (args->idx < 32) {
+        for (cpu=24; cpu<32; cpu++)
+            CPU_SET(cpu, &cpuset);
+
+        err = pthread_setaffinity_np(pthread_self(), sizeof(cpuset), &cpuset);
+    }
+    
+    if (err != 0)
+        fprintf(stderr, "Error setting affinity on thread %d. Continuing.\n", args->idx);
+
+    sched_yield();
 
 	bt = bt_open(args->mgr, args->idx);
 	time(tod);
@@ -2113,8 +2148,9 @@ void *index_file(void *arg)
 
 int main(int argc, char **argv)
 {
-	int idx, cnt, len, slot, err, verbose;
+	int idx, cnt, len, slot, err, verbose, cpu;
 	pthread_t *threads;
+    cpu_set_t cpuset;
 	timer start, stop;
 	double real_time;
 	ThreadArg *args;
@@ -2135,6 +2171,16 @@ int main(int argc, char **argv)
 		fprintf(stderr, "  in the context of scans, neither matter\n");
 		exit(0);
 	}
+
+    // Set cpu affinity
+    cpu = 63;
+    CPU_ZERO(&cpuset);
+    CPU_SET(cpu, &cpuset);
+
+    if (err = sched_setaffinity(0, sizeof(cpuset), &cpuset))
+        fprintf(stderr, "Unable to set main process affinity. Continuing.\n");
+
+    sched_yield();
 
 	gettimeofday(&start, NULL);
 
@@ -2166,7 +2212,7 @@ int main(int argc, char **argv)
 		args[idx].mgr = mgr;
 		args[idx].idx = idx;
 		if (err = pthread_create(threads + idx, NULL, index_file, args + idx))
-			fprintf(stderr, "Error creating thread %d\n", err);
+			fprintf(stderr, "Error creating thread %d\n", err);        
 	}
 
 	// 	wait for termination
@@ -2191,7 +2237,6 @@ int main(int argc, char **argv)
 		for (idx = 0; idx < cnt; idx++) {
 			fprintf(stdout, "     Thread %d - %.2f seconds\n", idx, (double)(mgr->rootwritewait[idx] / getTicksPerNano() / 1000000000));
 		}
-
 		fprintf(stdout, " Time waiting for read locks:\n");
 		for (idx = 0; idx < cnt; idx++) {
 			fprintf(stdout, "     Thread %d - %.2f seconds\n", idx, (double)(mgr->readlockwait[idx] / getTicksPerNano() / 1000000000));
