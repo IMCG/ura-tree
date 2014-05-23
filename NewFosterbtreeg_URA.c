@@ -23,7 +23,7 @@ REDISTRIBUTION OF THIS SOFTWARE.
 
 #define _GNU_SOURCE
 //#define VERIFY
-#define ONELOCK
+//#define EXCLUSIVELOCK
 
 // Constants
 #define BITS 14                         // Page size in bits
@@ -651,13 +651,21 @@ BTERR bt_lockpage(BtDb *bt, uid page_no, BtLock mode, BtPage *pageptr)
 
 	switch (mode) {
 	case BtLockRead:
+#ifdef EXCLUSIVELOCK
+        bt_spinwritelock(page->readwr, bt);
+#else
 		bt_spinreadlock(page->readwr, bt);
+#endif
 		break;
 	case BtLockWrite:
 		bt_spinwritelock(page->readwr, bt);
 		break;
 	case BtLockAccess:
+#ifdef EXCLUSIVELOCK
+        bt_spinwritelock(page->access, bt);
+#else
 		bt_spinreadlock(page->access, bt);
+#endif
 		break;
 	case BtLockDelete:
 		bt_spinwritelock(page->access, bt);
@@ -2212,7 +2220,7 @@ int main(int argc, char **argv)
 		args[idx].mgr = mgr;
 		args[idx].idx = idx;
 		if (err = pthread_create(threads + idx, NULL, index_file, args + idx))
-			fprintf(stderr, "Error creating thread %d\n", err);        
+			fprintf(stderr, "Error creating thread %d\n", err);
 	}
 
 	// 	wait for termination
