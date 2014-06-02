@@ -4,6 +4,12 @@
 // author: karl malbrain, malbrain@cal.berkeley.edu
 // edits: nicolas arciniega, naarcini@uwaterloo.ca
 
+// ---------------------------------------------------------------------------
+// This file is the original foster btree modified to work in main memory
+// No work is done here with lower fence keys or optimistic searching
+// Note that the command to run this program varies from NewFosterbtreeg_URA
+// ---------------------------------------------------------------------------
+
 /*
 This work, including the source code, documentation
 and related data, is placed into the public domain.
@@ -1556,6 +1562,8 @@ void *index_file(void *arg)
 		fprintf(stdout, "The file called %s has been loaded\n", args->ctx_string);
 
 		/*Split the text by endline characters*/
+
+        // So it turns out that strtok does not work very well with multiple threads
 		//token = strtok(fileBuffer, "\n");
 		numchars = 0;
 		while (numchars < numbytes) {
@@ -1691,7 +1699,7 @@ int main(int argc, char **argv)
 		fprintf(stderr, "  somestring is not in use right now\n");
 		fprintf(stderr, "  Write (w), Find (f), Multithread (m), and Scan (s) are the only options right now\n");
 		fprintf(stderr, "  context_num is some number that might be used in processing\n");
-		fprintf(stderr, "  context_string1 thru context_stringn are dependent on function\n\n");
+		fprintf(stderr, "  context_string1 through context_stringn are dependent on function\n\n");
 
 		fprintf(stderr, "  in the context of writes, the number means nothing and the strings are filenames\n");
 		fprintf(stderr, "  in the context of finds, the number is the key length and the first string is the key to find\n");
@@ -1734,6 +1742,7 @@ int main(int argc, char **argv)
 	for (idx = 0; idx < cnt; idx++)
 		pthread_join(threads[idx], NULL);
 
+    // Lots of output
 	gettimeofday(&stop, NULL);
 	real_time = 1000.0 * (stop.tv_sec - start.tv_sec) + 0.001 * (stop.tv_usec - start.tv_usec);
 	fprintf(stdout, " Time to complete: %.2f seconds\n", real_time / 1000);

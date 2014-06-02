@@ -5,6 +5,11 @@ import os.path
 def getletter(idx):
     return str(unichr(idx + 97))
 
+# In general, this program is used to generate a distinct fixed-length set of keys
+# You can specify how many letters of the alphabet to use and how long each string can be
+# If you want to have some key repetition, that can also be added
+# Total number of keys is given by ((num letters)^(string-length))*(repeats + 1)
+
 parser = argparse.ArgumentParser(description='Generate keys for testing')
 parser.add_argument('outfile', nargs='?', type=str, help='Output file name.')
 parser.add_argument('--length', action='store', default=5, type=int, choices=range(1, 8), help='Number of characters to permute (total strings = 26^length)')
@@ -21,6 +26,8 @@ if(args.outfile == None):
 out = open(args.outfile, 'w')
 repeats = args.repeats
 
+# Loop for a potential depth of 7 letters
+# No need for more since this provides enough permutations
 while (repeats >= 0):
     for a in range(0, args.letters):
         if (args.length == 1):
@@ -63,6 +70,9 @@ while (repeats >= 0):
                                     out.write(getletter(a) + getletter(b) + getletter(c) + getletter(d) + getletter(e) + getletter(f) + getletter(g) + '\n')
     repeats -= 1;
 
+# An easy way to implement this would be to run the shuf command on the newly generated file
+# See man shuf for details
 if (args.scramble):
     #randomize file
     print 'Scramble not yet implemented'
+

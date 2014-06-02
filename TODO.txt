@@ -1,0 +1,21 @@
+- Investigate why optimistic searching is not giving much of a performance increase
+    - Write wait time is generally much slower
+    - Does less reads, but ends up with a larger read latency
+    - Need to spend more time looking at results and organizing results
+    - Note that Test05 has a page called "constants" where you can find how many keys are in each dataset
+
+- Test different things to see if performance changes
+    - Could maybe modify algorithm to hold fewer locks
+    - Could modify locking system in general to make faster locks (Affects both algorithms)
+    - Try smaller trees to see how much contention affects this (Ideally optimistic works better in high-contention environment)
+    - Look into hierarchal locking
+
+- Improve toolset to make things more efficient
+    - Need a nice way to visualize data automatically (see gnuplot)
+    - Modify scripts to make them simpler and more extensible
+    - Find some more datasets to test with (or make new ones from generatekeys.py)
+    - Ideally, full generation of a file structure for a new dataset should be completely automatic
+
+- Compare performance with other data structures
+    - T-Tree implementation
+    - Possibly compare with original disk-based version

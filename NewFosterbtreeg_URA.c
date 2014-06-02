@@ -21,6 +21,7 @@ REDISTRIBUTION OF THIS SOFTWARE.
 // Please see the project home page for documentation
 // code.google.com/p/high-concurrency-btree
 
+// VERIFY is used to provide debug output during page splits
 #define _GNU_SOURCE
 //#define VERIFY
 
@@ -138,7 +139,7 @@ typedef struct Page {
 	unsigned char bits;			// page size in bits
 	unsigned char lvl : 6;		// level of page
 	unsigned char kill : 1;		// page is being deleted
-	unsigned char dirty : 1;		// page needs to be cleaned
+	unsigned char dirty : 1;	// page needs to be cleaned
 	unsigned char right[BtId];	// page number to right
 } *BtPage;
 
@@ -209,7 +210,7 @@ extern uint bt_startkey(BtDb *bt, unsigned char *key, uint len);
 extern uint bt_nextkey(BtDb *bt, uint slot);
 
 //	manager functions
-extern BtMgr *bt_mgr(char *name, uint bits, uint segsize, int optimistic);
+extern BtMgr *bt_mgr(uint bits, uint segsize, int optimistic);
 void bt_mgrclose(BtMgr *mgr);
 
 //  Helper functions to return cursor slot values
@@ -239,9 +240,9 @@ extern uint bt_tod(BtDb *bt, uint slot);
 //| foster=2      |	Slot           | dead=0 | dead=1 | dead=0 | Slot           |          |          |.............|             |             |              |       |       |       |             |
 //| cnt=7, act=6  | fence=1,dead=1 |        |        |        | fence=1,dead=0 |          |          |             |             |             |              |       |       |       |             |
 //------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-// 0                                                                                                      min                                                                         page_size
+// 0                                                                                                               min                                                                  page_size
 //
-// When adding keys, keys are allocated backwards from min and slots are allocated in order without overwriting fence slot or foster slots
+// When adding keys, they are allocated backwards from min and slots are allocated in order without overwriting fence slot or foster slots
 // Offset member in slot points to appropriate key
 // Low fence is marked as dead so it gets skipped when reading (to avoid two instances of same key) or traversing tree (no child)
 //
@@ -408,10 +409,12 @@ void bt_close(BtDb *bt)
 
 //  open/create new btree buffer manager
 
-//	call with file_name, BT_openmode, bits in page size (e.g. 16),
-//		size of mapped page pool (e.g. 8192)
+//  bits: bits in page size
+//  segsize: size of pages per pool in bits
+//          A relic of previous implementation, could maybe be removed
+//  optimistic: Perform optimistic searching?
 
-BtMgr *bt_mgr(char *name, uint bits, uint segsize, int optimistic)
+BtMgr *bt_mgr(uint bits, uint segsize, int optimistic)
 {
 	uint lvl, cacheblk, last;
 	BtPage alloc;
@@ -429,6 +432,7 @@ BtMgr *bt_mgr(char *name, uint bits, uint segsize, int optimistic)
 
 	mgr = (BtMgr *)malloc(sizeof(BtMgr));
 
+    // Allocate space in memory for b-tree
 	buffer = (char*)calloc(BUFFERSIZE, sizeof(char));
 	mgr->buffer = buffer;
 
@@ -492,7 +496,7 @@ BtMgr *bt_mgr(char *name, uint bits, uint segsize, int optimistic)
 		slotptr(alloc, 1)->off = mgr->page_size - 3;
 		slotptr(alloc, 1)->fence = 1;
         slotptr(alloc, 1)->dead = 1;
-		bt_putid(slotptr(alloc, 1)->id, 0);		// No left child
+		bt_putid(slotptr(alloc, 1)->id, 0);		// No child
 		key = keyptr(alloc, 1);
 		key->len = 2;			// create starter key
 		key->key[0] = 0x00;
@@ -1308,6 +1312,7 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 	int test;
 
 #ifdef VERIFY
+    // This only executes the first time the root is split
 	if (bt->mgr->flag & 0x1) {
 		fprintf(stdout, "\nFirst root split before:\n");
         fprintf(stdout, "    page_no=%d\n", ROOT_page);
@@ -1355,7 +1360,7 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 	starter[1] = 0x00;
 	starter[2] = 0x00;
 	memcpy((unsigned char *)root + nxt, starter, *starter + 1);
-	bt_putid(slotptr(root, 1)->id, 0);
+	bt_putid(slotptr(root, 1)->id, 0); // No child
 	slotptr(root, 1)->off = nxt;
 	slotptr(root, 1)->fence = 1;
     slotptr(root, 1)->dead = 1;
@@ -1384,7 +1389,9 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 	root->lvl++;
 
 #ifdef VERIFY
+    // This only executes the first time a root is split
 	if (bt->mgr->flag & 0x1) {
+        // Clear the flag so we don't output this again
 		bt->mgr->flag = bt->mgr->flag & 0xe;
 
 		fprintf(stdout, "\nFirst root split after - root:\n");
@@ -1443,7 +1450,10 @@ BTERR bt_splitpage(BtDb *bt)
 	int test, hasfoster = 0;
 
 #ifdef VERIFY
+    // This executes at the first non-root split, at the 100th or greater split if it is a leaf, or if the page has a foster child
 	if (bt->mgr->flag & 0x2 || ((bt->mgr->counter > 100) && (bt->mgr->flag & 0x4) && (lvl == 0)) || page->foster > 0) {
+
+        // Set/clear flags so that the second output is shown only once in the case of the 100th+ split
 		if((bt->mgr->counter > 100) && (bt->mgr->flag & 0x4) && (lvl == 0)) {
 			bt->mgr->flag = bt->mgr->flag | 0x8;
 			bt->mgr->flag = bt->mgr->flag & 0xb;
@@ -1478,7 +1488,7 @@ BTERR bt_splitpage(BtDb *bt)
 	//  split higher half of keys to bt->frame
 	//	leaving foster children in the left node.
 
-	// Include what will be fence key
+	// Include what will be the low fence key
     // Mark as dead so key isn't read twice
 	key = keyptr(page, cnt);
 	nxt -= key->len + 1;
@@ -1683,7 +1693,10 @@ try_again:
 		return bt->err;
 
 #ifdef VERIFY
+    // This executes at the first non-root split, at the 100th or greater split if it is a leaf, or if the page has a foster child
 	if (bt->mgr->flag & 0x2 || bt->mgr->flag & 0x8 || hasfoster) {
+
+        // Clear flags so this doesn't happen for the same reason twice (Unless original page has foster child)
 		if(bt->mgr->flag & 0x2)
 			bt->mgr->flag = bt->mgr->flag & 0xd;
 
@@ -1886,6 +1899,8 @@ void *index_file(void *arg)
 	unsigned char ch[1];
 	unsigned long long numbytes;
 
+    // Assign cpu affinity to thread based on thread count
+    // Lowers overhead for threads communicating in same viscinity
     CPU_ZERO(&cpuset);
     if (args->idx < 8) {
         for (cpu=0; cpu<8; cpu++)
@@ -1915,6 +1930,7 @@ void *index_file(void *arg)
     if (err != 0)
         fprintf(stderr, "Error setting affinity on thread %d. Continuing.\n", args->idx);
 
+    // Give up processor to make sure we are re-sheduled to correct cpu
     sched_yield();
 
 	bt = bt_open(args->mgr, args->idx);
@@ -1986,7 +2002,9 @@ void *index_file(void *arg)
 
 		//fprintf(stdout, "finished %s for %llu keys\n", args->filename, line);
 
+        // --------------------------------------------------
         // Below is for printing out root page
+        // --------------------------------------------------
 		/*
 		fprintf(stdout, "Check root page:\n");
 
@@ -2007,8 +2025,10 @@ void *index_file(void *arg)
 		if (bt_unlockpage(bt, ROOT_page, BtLockRead))
 			return 0;
 		*/
-    
+
+        // -----------------------------------------------------------------------------
         // Below is for printing out entire set of leaf keys or just reading unique keys
+        // -----------------------------------------------------------------------------
         /*
 		fprintf(stdout, "started reading\n");
 
@@ -2030,7 +2050,9 @@ void *index_file(void *arg)
 		fprintf(stdout, "Finished reading %llu keys\n", line);
         */
 
+        // ----------------------------------------------------------------------
         // Below is for searching an arbitrary key and printing out its page
+        // ----------------------------------------------------------------------
 		/*
 		if (rowid = bt_findkey(bt, "voluntary", 9)) {
 			fprintf(stdout, "Found the key in row: %d\n", rowid);
@@ -2083,7 +2105,8 @@ void *index_file(void *arg)
 		
 		break;
 	case 's':
-        // Print out entire tree. No longer in use
+        // Print out entire tree. No longer in use.
+        // Code might not work anymore. It's just there for reference.
         /*
 		len = key[0] = 0;
 
@@ -2108,6 +2131,7 @@ void *index_file(void *arg)
 		break;
 	case 'f':
         // Find specific key. No longer in use.
+        // Code might not work anymore. It's just there for reference.
         /*
 		fprintf(stdout, "started finding\n");
 		
@@ -2164,10 +2188,6 @@ int main(int argc, char **argv)
 		fprintf(stderr, "  Write (w) is the only valid option right now. \n");
 		fprintf(stderr, "  Optimistic determines whether or not to use optimistic searching\n");
 		fprintf(stderr, "  filename arguments are names of files that contain keys to index\n\n");
-
-		fprintf(stderr, "  in the context of writes, the number means nothing and the strings are filenames\n");
-		fprintf(stderr, "  in the context of finds, the number is the key length and the first string is the key to find\n");
-		fprintf(stderr, "  in the context of scans, neither matter\n");
 		exit(0);
 	}
 
@@ -2179,6 +2199,7 @@ int main(int argc, char **argv)
     if (err = sched_setaffinity(0, sizeof(cpuset), &cpuset))
         fprintf(stderr, "Unable to set main process affinity. Continuing.\n");
 
+    // Give up processor to make sure we get schedule to right cpu
     sched_yield();
 
 	gettimeofday(&start, NULL);
@@ -2191,7 +2212,7 @@ int main(int argc, char **argv)
 
 	args = malloc(cnt * sizeof(ThreadArg));
 
-	mgr = bt_mgr((argv[1]), BITS, SEGSIZE, optimistic);
+	mgr = bt_mgr(BITS, SEGSIZE, optimistic);
 
     // Flag and counter are set for purposes of verification. Test code only.
 	mgr->flag = 0x7;

@@ -3,10 +3,20 @@ import sys
 import subprocess
 import os.path
 
+# This script is intended to build a set of commands to automatically test a bunch of b-tree cases
+# It works specifically with the file structure found on naarcini's home directory on manta
+# Currently set up to test from 1 to 32 threads on 3 separate files labelled smallset, largeset, and distinctset
+
+# For example the command to test 2 threaded insertion on a small skew workload using optimistic searching is:
+# ./NewFosterbtreeg_URA 0 w 1 smallset/skew02/part01 smallset/skew02/part02
+
+# Output of tests will be put into a csv file in current directory as specified by user
+
 def checkfiles(fileroot, set_type, filetype, threadnum):
     #Check existence of files
     directory = set_type + "/"
 
+    # This set does not actually have a skewed workload. It is more accurate to say random
     if (set_type == 'distinctset'):
         if (filetype == 'skew'):
             directory += "rand"
@@ -14,7 +24,8 @@ def checkfiles(fileroot, set_type, filetype, threadnum):
             directory += "sort"
     else:
         directory += filetype
-    
+
+    # Ensure to use 2 digitsn for file name
     directory += str(threadnum).zfill(2)
     dirExist = os.path.isdir(os.path.join(fileroot, directory))
     fileExist = True
@@ -31,6 +42,7 @@ def checkfiles(fileroot, set_type, filetype, threadnum):
     return fileExist and dirExist
 
 def buildcommand(noOptimistic, set_type, filetype, threadnum):
+    # By default, only output numbers for csv format, not full verbose output
     command = "./NewFosterbtreeg_URA 0 w"
 
     if(noOptimistic):
@@ -40,6 +52,8 @@ def buildcommand(noOptimistic, set_type, filetype, threadnum):
     
     for partnum in range(1, threadnum+1):
         command += " " + set_type + "/"
+
+        # Poorly designed separation between labels in distinctset and others
         if (set_type == 'distinctset'):
             if (filetype == 'skew'):
                 command += "rand"
