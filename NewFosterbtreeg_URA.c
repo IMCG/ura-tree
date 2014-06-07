@@ -3,6 +3,7 @@
 
 // author: karl malbrain, malbrain@cal.berkeley.edu
 // edits: nicolas arciniega, naarcini@uwaterloo.ca
+//          Left only unix-compatible code for legibility
 
 /*
 This work, including the source code, documentation
@@ -144,6 +145,7 @@ typedef struct Page {
 } *BtPage;
 
 //	The object structure for Btree access
+// Edited by naarcini
 
 typedef struct {
 	uint page_size;				// page size	
@@ -154,6 +156,8 @@ typedef struct {
 	volatile ushort poolcnt;	// highest page pool node in use
 	volatile ushort evicted;	// last evicted hash table slot
 	ushort poolmask;			// total size of pages in logical memory pool segment - 1
+
+    // Below added by naarcini
     uint optimistic : 1;        // Use optimistic searching?
 
 	// Tracking Data
@@ -161,8 +165,8 @@ typedef struct {
     uid rootwritewait[MAXTHREADS];
 	uid readlockwait[MAXTHREADS];
 	uid writelockwait[MAXTHREADS];
-	uid readlockaquired[MAXTHREADS];
-	uid writelockaquired[MAXTHREADS];
+	uid readlockacquired[MAXTHREADS];
+	uid writelockacquired[MAXTHREADS];
 	uid readlockfail[MAXTHREADS];
 	uid writelockfail[MAXTHREADS];
     double threadtime[MAXTHREADS];
@@ -186,6 +190,8 @@ typedef struct {
 	uid cursor_page;	// current cursor page number	
 	unsigned char *mem;	// frame, cursor, page memory buffer
 	int err;			// last error
+
+    // Added by naarcini
 	int thread_id;      // thread identifier
 } BtDb;
 
@@ -202,7 +208,7 @@ typedef enum {
 
 // B-Tree functions
 extern void bt_close(BtDb *bt);
-extern BtDb *bt_open(BtMgr *mgr, int thread_id);
+extern BtDb *bt_open(BtMgr *mgr, int thread_id); // Edited by naarcini
 extern BTERR  bt_insertkey(BtDb *bt, unsigned char *key, uint len, uid id, uint tod);
 extern BTERR  bt_deletekey(BtDb *bt, unsigned char *key, uint len, uint lvl);
 extern uid bt_findkey(BtDb *bt, unsigned char *key, uint len);
@@ -308,6 +314,7 @@ void bt_spinreadlock(BtSpinLatch *latch, BtDb *bt)
 
 	do {
 		while (__sync_fetch_and_or((ushort *)latch, Mutex) & Mutex) {
+            // Tracking added by naarcini
 			bt->mgr->readlockfail[bt->thread_id] += 1;
 			sched_yield();
 		}
@@ -321,6 +328,7 @@ void bt_spinreadlock(BtSpinLatch *latch, BtDb *bt)
 		if (prev)
 			return;
 
+        // Tracking added by naarcini
 		bt->mgr->readlockfail[bt->thread_id] += 1;
 
 	} while (sched_yield(), 1);
@@ -335,6 +343,7 @@ void bt_spinwritelock(BtSpinLatch *latch, BtDb *bt)
 
 	do {
 		while (__sync_fetch_and_or((ushort *)latch, Mutex | Pending) & Mutex) {
+            // Tracking added by naarcini
 			bt->mgr->writelockfail[bt->thread_id] += 1;
 			sched_yield();
 		}
@@ -347,6 +356,7 @@ void bt_spinwritelock(BtSpinLatch *latch, BtDb *bt)
 		if (prev)
 			return;
 
+        // Tracking added by naarcini
 		bt->mgr->writelockfail[bt->thread_id] += 1;
 		sched_yield();
 
@@ -363,6 +373,7 @@ int bt_spinwritetry(BtSpinLatch *latch, BtDb *bt)
 	ushort prev;
 
 	if (prev = __sync_fetch_and_or((ushort *)latch, Mutex), prev & Mutex) {
+        // Tracking added by naarcini
 		bt->mgr->writelockfail[bt->thread_id] += 1;
 		return 0;
 	}
@@ -389,6 +400,7 @@ void bt_spinreleaseread(BtSpinLatch *latch)
 	__sync_fetch_and_add((ushort *)latch, -Share);
 }
 
+// Edited by naarcini
 void bt_mgrclose(BtMgr *mgr)
 {
 	uint slot;
@@ -398,6 +410,7 @@ void bt_mgrclose(BtMgr *mgr)
 }
 
 //	close and release memory
+// Edited by naarcini
 
 void bt_close(BtDb *bt)
 {
@@ -413,6 +426,7 @@ void bt_close(BtDb *bt)
 //  segsize: size of pages per pool in bits
 //          A relic of previous implementation, could maybe be removed
 //  optimistic: Perform optimistic searching?
+// Edited by naarcini
 
 BtMgr *bt_mgr(uint bits, uint segsize, int optimistic)
 {
@@ -452,8 +466,8 @@ BtMgr *bt_mgr(uint bits, uint segsize, int optimistic)
         mgr->rootwritewait[i] = 0;
 		mgr->readlockwait[i] = 0;
 		mgr->writelockwait[i] = 0;
-		mgr->readlockaquired[i] = 0;
-		mgr->writelockaquired[i] = 0;
+		mgr->readlockacquired[i] = 0;
+		mgr->writelockacquired[i] = 0;
 		mgr->readlockfail[i] = 0;
 		mgr->writelockfail[i] = 0;
 		mgr->lowfenceoverwrite[i] = 0;
@@ -493,6 +507,7 @@ BtMgr *bt_mgr(uint bits, uint segsize, int optimistic)
 	alloc->bits = mgr->page_bits;
 
 	for (lvl = MIN_lvl; lvl--;) {
+        // Starterkey is original low fence key (naarcini)
 		slotptr(alloc, 1)->off = mgr->page_size - 3;
 		slotptr(alloc, 1)->fence = 1;
         slotptr(alloc, 1)->dead = 1;
@@ -576,6 +591,7 @@ int keycmp(BtKey key1, unsigned char *key2, uint len2)
 
 //	find or place requested page in segment-pool
 //	return pool table entry
+// Edited by naarcini
 
 char *bt_findpool(BtDb *bt, uid page_no)
 {
@@ -593,6 +609,7 @@ char *bt_findpool(BtDb *bt, uid page_no)
 }
 
 // Save a page to a pointer
+// Added by naarcini
 
 BTERR bt_savepage(BtDb *bt, uid page_no, BtPage *pageptr) {
 	char *pool_ptr;
@@ -615,7 +632,8 @@ BTERR bt_savepage(BtDb *bt, uid page_no, BtPage *pageptr) {
 }
 
 // place write, read, or parent lock on requested page_no.
-//	pin to buffer pool and return page pointer
+// returns page pointer.
+// Edited by naarcini
 
 BTERR bt_lockpage(BtDb *bt, uid page_no, BtLock mode, BtPage *pageptr)
 {
@@ -679,14 +697,14 @@ BTERR bt_lockpage(BtDb *bt, uid page_no, BtLock mode, BtPage *pageptr)
 	endTime = preciseTime();
 	if (mode == BtLockRead || mode == BtLockAccess) {
 		bt->mgr->readlockwait[bt->thread_id] += (endTime - startTime);
-		bt->mgr->readlockaquired[bt->thread_id] = bt->mgr->readlockaquired[bt->thread_id] + 1;
+		bt->mgr->readlockacquired[bt->thread_id] = bt->mgr->readlockacquired[bt->thread_id] + 1;
         if(page_no == ROOT_page) {
             bt->mgr->rootreadwait[bt->thread_id] += (endTime - startTime);
         }
 	}
 	else if (mode == BtLockWrite || mode == BtLockDelete || mode == BtLockParent) {
 		bt->mgr->writelockwait[bt->thread_id] += (endTime - startTime);
-		bt->mgr->writelockaquired[bt->thread_id] = bt->mgr->writelockaquired[bt->thread_id] + 1;
+		bt->mgr->writelockacquired[bt->thread_id] = bt->mgr->writelockacquired[bt->thread_id] + 1;
         if(page_no == ROOT_page) {
             bt->mgr->rootwritewait[bt->thread_id] += (endTime - startTime);
         }
@@ -696,6 +714,7 @@ BTERR bt_lockpage(BtDb *bt, uid page_no, BtLock mode, BtPage *pageptr)
 }
 
 // remove write, read, or parent lock on requested page_no.
+// Edited by naarcini
 
 BTERR bt_unlockpage(BtDb *bt, uid page_no, BtLock mode)
 {
@@ -777,6 +796,7 @@ BTERR bt_freepage(BtDb *bt, uid page_no)
 }
 
 //	allocate a new page and write page into it
+// Edited by naarcini
 
 uid bt_newpage(BtDb *bt, BtPage page)
 {
@@ -964,6 +984,7 @@ int bt_loadpage(BtDb *bt, unsigned char *key, uint len, uint lvl, uint lock)
 
 // Optimistic version of loadpage
 // falls back on original method if it fails
+// Added by naarcini
 
 int bt_optimisticloadpage(BtDb *bt, unsigned char *key, uint len, uint lvl, uint lock)
 {
@@ -1202,6 +1223,7 @@ uid bt_findkey(BtDb *bt, unsigned char *key, uint len)
 //	clean if necessary and return
 //	0 - page needs splitting
 //	1 - go ahead
+// Edited by naarcini to allow low fence keys
 
 uint bt_cleanpage(BtDb *bt, uint amt)
 {
@@ -1260,6 +1282,7 @@ uint bt_cleanpage(BtDb *bt, uint amt)
 
 //	add key to current page
 //	page must already be writelocked
+// Edited by naarcini
 
 void bt_addkeytopage(BtDb *bt, uint slot, unsigned char *key, uint len, uid id, uint tod)
 {
@@ -1300,6 +1323,7 @@ void bt_addkeytopage(BtDb *bt, uint slot, unsigned char *key, uint len, uid id, 
 // split the root and raise the height of the btree
 //	call with current page locked and page no of foster child
 //	return with current page (root) unlocked
+// Edited by naarcini
 
 BTERR bt_splitroot(BtDb *bt, uid right)
 {
@@ -1436,6 +1460,7 @@ BTERR bt_splitroot(BtDb *bt, uid right)
 //  split already locked full node
 //	in current page variables
 //	return unlocked.
+// Edited by naarcini
 
 BTERR bt_splitpage(BtDb *bt)
 {
@@ -1878,6 +1903,7 @@ typedef struct {
 
 //  standalone program to index file of keys
 //  then list them onto std-out
+// Edited by naarcini
 
 void *index_file(void *arg)
 {
@@ -2169,6 +2195,8 @@ void *index_file(void *arg)
 	return NULL;
 }
 
+// Edited by naarcini
+
 int main(int argc, char **argv)
 {
 	int idx, cnt, len, slot, err, verbose, cpu;
@@ -2265,13 +2293,13 @@ int main(int argc, char **argv)
 		for (idx = 0; idx < cnt; idx++) {
 			fprintf(stdout, "     Thread %d - %.2f seconds\n", idx, (double)(mgr->writelockwait[idx] / getTicksPerNano() / 1000000000));
 		}
-		fprintf(stdout, " Number of read locks aquired:\n");
+		fprintf(stdout, " Number of read locks acquired:\n");
 		for (idx = 0; idx < cnt; idx++) {
-			fprintf(stdout, "     Thread %d - %llu aquired\n", idx, mgr->readlockaquired[idx]);
+			fprintf(stdout, "     Thread %d - %llu acquired\n", idx, mgr->readlockacquired[idx]);
 		}
-		fprintf(stdout, " Number of write locks aquired:\n");
+		fprintf(stdout, " Number of write locks acquired:\n");
 		for (idx = 0; idx < cnt; idx++) {
-			fprintf(stdout, "     Thread %d - %llu aquired\n", idx, mgr->writelockaquired[idx]);
+			fprintf(stdout, "     Thread %d - %llu acquired\n", idx, mgr->writelockacquired[idx]);
 		}
 		fprintf(stdout, " Number of read locks failed:\n");
 		for (idx = 0; idx < cnt; idx++) {
@@ -2305,8 +2333,8 @@ int main(int argc, char **argv)
             fprintf(stdout, "%.2f,", (double)(mgr->rootwritewait[idx] / getTicksPerNano()));
             fprintf(stdout, "%.2f,", (double)(mgr->readlockwait[idx] / getTicksPerNano()));
             fprintf(stdout, "%.2f,", (double)(mgr->writelockwait[idx] / getTicksPerNano()));
-            fprintf(stdout, "%llu,", mgr->readlockaquired[idx]);
-            fprintf(stdout, "%llu,", mgr->writelockaquired[idx]);
+            fprintf(stdout, "%llu,", mgr->readlockacquired[idx]);
+            fprintf(stdout, "%llu,", mgr->writelockacquired[idx]);
             fprintf(stdout, "%llu,", mgr->readlockfail[idx]);
             fprintf(stdout, "%llu,", mgr->writelockfail[idx]);
             fprintf(stdout, "%llu,", mgr->lowfenceoverwrite[idx]);
